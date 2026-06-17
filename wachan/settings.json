@@ -1,5 +1,8 @@
 {
   "receiveOfflineMessages": false,
   "defaultBotName": "Wachan",
-  "messageStoreSize": 1000
+  "messageStoreSize": 1000,
+  "commandPrefixes": [
+    "."
+  ]
 }

@@ -4,10 +4,17 @@ const commands = require('wachan/commands');
 // Load semua commands dari folder
 commands.fromFolder('./commands');
 
+// Log command execution
+commands.beforeEach((context, next) => {
+    const { message, command } = context;
+    console.log(`[COMMAND] ${message.sender.name || message.sender.id}: .${command.name} ${command.parameters.join(' ')}`);
+    next();
+});
+
 // Log semua pesan masuk
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message } = context;
-    if (message.text) {
+    if (message.text && !message.text.startsWith('.')) {
         console.log(`[${message.sender.name || message.sender.id}]: ${message.text}`);
     }
     next();
