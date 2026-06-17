@@ -4,7 +4,7 @@ module.exports = {
         const text = command.parameters.join(' ');
         
         if (!text) {
-            return 'Gunakan: /echo <text>';
+            return `Gunakan: ${command.prefix}echo <text>`;
         }
         
         return text;
