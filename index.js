@@ -39,6 +39,21 @@ wachan.onReady(() => {
 // Event: connected
 wachan.onConnected(() => {
     console.log('Authenticated!');
+    
+    // Wrap sendMessage untuk auto-inject ephemeral 1 tahun
+    const sock = wachan.getSocket();
+    const originalSendMessage = sock.sendMessage.bind(sock);
+    
+    sock.sendMessage = async (jid, content, options = {}) => {
+        // Inject ephemeral expiration
+        const modifiedOptions = {
+            ...options,
+            ephemeralExpiration: 31536000 // 1 tahun
+        };
+        return originalSendMessage(jid, content, modifiedOptions);
+    };
+    
+    console.log('[EPHEMERAL] Auto 1-year ephemeral enabled for all outgoing messages');
 });
 
 // Event: error
