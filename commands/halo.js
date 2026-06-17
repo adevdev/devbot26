@@ -1,5 +1,5 @@
 module.exports = {
-    response: async (context) => {
+    response: async (context, next) => {
         const { message } = context;
         return `Halo juga, ${message.sender.name || 'teman'}! Ada yang bisa saya bantu?`;
     },

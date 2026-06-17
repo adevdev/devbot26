@@ -1,5 +1,5 @@
 module.exports = {
-    response: async (context) => {
+    response: async (context, next) => {
         const { command } = context;
         const text = command.parameters.join(' ');
         
