@@ -29,13 +29,11 @@ dashboard.start(3000).then(() => {
 
 // Setup start bot handler
 dashboard.onStartBot(async () => {
-    dashboard.addLog('info', 'Starting bot...');
     await initBot();
 });
 
 // Setup stop bot handler
 dashboard.onStopBot(async () => {
-    dashboard.addLog('info', 'Stopping bot...');
     if (botSocket) {
         try {
             // Just disconnect, don't logout (keep credentials)
@@ -45,9 +43,8 @@ dashboard.onStopBot(async () => {
                 botSocket.ws.close();
             }
             botSocket = null;
-            dashboard.addLog('success', 'Bot stopped successfully');
         } catch (error) {
-            dashboard.addLog('error', `Stop error: ${error.message}`);
+            console.error('Stop error:', error.message);
         }
     }
 });
@@ -60,10 +57,9 @@ commands.beforeEach((context, next) => {
     const { message, command, group } = context;
     const groupName = group ? `[${group.subject || 'Group'}] ` : '';
     const logMsg = `${groupName}${message.sender.name || message.sender.id}: .${command.usedName} ${command.parameters.join(' ')}`;
-    
+
     console.log(`[COMMAND] ${logMsg}`);
-    dashboard.addLog('command', logMsg);
-    
+
     next();
 });
 
@@ -73,38 +69,32 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
     if (message.text && !message.text.startsWith('.')) {
         const groupName = group ? `[${group.subject || 'Group'}] ` : '';
         const logMsg = `${groupName}[${message.sender.name || message.sender.id}]: ${message.text}`;
-        
+
         console.log(logMsg);
-        dashboard.addLog('message', logMsg);
     }
     next();
 });
 
 // Event: bot ready
 wachan.onReady(() => {
-    console.log('Bot WhatsApp siap!');
-    dashboard.addLog('success', 'Bot WhatsApp siap!');
+    console.log('Ready!');
     dashboard.setStatus('connected');
-    
+
     const cmds = commands.getCommands();
-    
+
     if (cmds && cmds.sections) {
         const total = Object.values(cmds.sections).flat().length + (cmds.unsectioned?.length || 0);
         console.log('Commands loaded:', total);
-        dashboard.addLog('info', `Commands loaded: ${total}`);
-        
+
         const allCommands = [...(cmds.unsectioned || []), ...Object.values(cmds.sections).flat()];
         const cmdNames = allCommands.map(c => c.name).join(', ');
         console.log('Available commands:', cmdNames);
-        dashboard.addLog('info', `Available commands: ${cmdNames}`);
     }
-    
+
     const prefixes = wachan.settings.commandPrefixes || ['/'];
-    console.log('Command prefix:', prefixes);
-    dashboard.addLog('info', `Command prefix: ${prefixes.join(', ')}`);
-    
+    console.log('Command prefix:', prefixes.join(', '));
+
     console.log('[EPHEMERAL] Auto 1-year ephemeral enabled');
-    dashboard.addLog('info', 'Auto 1-year ephemeral enabled for all messages');
 });
 
 // Event: connected
@@ -118,12 +108,9 @@ wachan.onConnected(() => {
     // Listen to baileys connection updates for pairing code
     if (botSocket) {
         botSocket.ev.on('connection.update', (update) => {
-            if (update.qr) {
-                dashboard.addLog('info', 'QR code generated (not displayed in terminal)');
-            }
             if (update.code) {
-                dashboard.addLog('success', `🔑 PAIRING CODE: ${update.code}`);
-                dashboard.addLog('info', 'Enter this code in WhatsApp > Linked Devices > Link a Device');
+                console.log(`🔑 PAIRING CODE: ${update.code}`);
+                console.log('Enter this code in WhatsApp > Linked Devices > Link a Device');
             }
         });
     }
@@ -144,13 +131,12 @@ wachan.onConnected(() => {
 // Event: error
 wachan.onError((error) => {
     console.error('Error:', error);
-    dashboard.addLog('error', `Bot error: ${error.message}`);
 });
 
 // Initialize bot
 async function initBot() {
     dashboard.setStatus('connecting');
-    dashboard.addLog('info', 'Checking for existing credentials...');
+    console.log('Checking for existing credentials...');
 
     const fs = require('fs');
     const credsPath = './wachan/state/creds.json';
@@ -159,15 +145,15 @@ async function initBot() {
 
     // Only ask for phone number if credentials don't exist
     if (!fs.existsSync(credsPath)) {
-        dashboard.addLog('info', 'No credentials found. Phone number required.');
+        console.log('No credentials found. Phone number required.');
         phoneNumber = await dashboard.requestPhoneNumber();
-        dashboard.addLog('info', `Starting bot with phone: ${phoneNumber}`);
+        console.log(`Starting bot with phone: ${phoneNumber}`);
 
         wachan.start({
             phoneNumber: phoneNumber
         });
     } else {
-        dashboard.addLog('info', 'Credentials found. Starting bot...');
+        console.log('Credentials found. Starting bot...');
 
         // Start without phone number - wachan will use existing creds
         wachan.start({

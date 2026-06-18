@@ -161,7 +161,6 @@ class BotDashboard {
                 if (phone && /^\d+$/.test(phone)) {
                     this.phoneNumber = phone;
                     socket.emit('phone-accepted', { phone });
-                    this.addLog('success', `Phone number set: ${phone}`);
 
                     // Resolve promise if waiting
                     if (this.phoneResolve) {
@@ -217,7 +216,6 @@ class BotDashboard {
             } else {
                 this.phoneResolve = resolve;
                 this.io.emit('request-phone');
-                this.addLog('info', 'Waiting for phone number input...');
             }
         });
     }
@@ -234,7 +232,6 @@ class BotDashboard {
         return new Promise((resolve) => {
             this.server.listen(port, () => {
                 console.log(`[DASHBOARD] Terminal running on http://localhost:${port}`);
-                this.addLog('success', `Terminal dashboard started on port ${port}`);
                 resolve();
             });
         });
