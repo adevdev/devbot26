@@ -3,6 +3,9 @@ const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
 const session = require('express-session');
+const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
 require('dotenv').config();
 
 class BotDashboard {
@@ -20,21 +23,50 @@ class BotDashboard {
 
         // Load auth credentials from environment variables
         this.authUsername = process.env.DASHBOARD_USERNAME || 'admin';
-        this.authPassword = process.env.DASHBOARD_PASSWORD || 'admin123';
+        // Store hashed password (will be compared with bcrypt)
+        this.authPasswordHash = null;
+        this.initPasswordHash();
 
         this.setupMiddleware();
         this.setupRoutes();
         this.setupSocketIO();
     }
 
+    // Initialize password hash from environment variable
+    async initPasswordHash() {
+        const plainPassword = process.env.DASHBOARD_PASSWORD || 'admin123';
+        this.authPasswordHash = await bcrypt.hash(plainPassword, 10);
+        console.log('[DASHBOARD] Password hash initialized');
+    }
+
     setupMiddleware() {
+        // Security headers with helmet
+        this.app.use(helmet({
+            contentSecurityPolicy: false, // Disable CSP for now to allow inline scripts
+        }));
+
+        // Rate limiting for login endpoint
+        const loginLimiter = rateLimit({
+            windowMs: 15 * 60 * 1000, // 15 minutes
+            max: 5, // 5 attempts per window
+            message: { success: false, message: 'Too many login attempts, please try again later.' },
+            standardHeaders: true,
+            legacyHeaders: false,
+        });
+
+        this.app.use('/api/login', loginLimiter);
+
         // Session middleware
+        const isProduction = process.env.NODE_ENV === 'production';
+        const useHttps = process.env.HTTPS_ENABLED === 'true';
         const sessionMiddleware = session({
             secret: process.env.SESSION_SECRET || 'devbot26-secret-key-change-this',
             resave: false,
             saveUninitialized: false,
             cookie: {
-                secure: false, // set to true if using HTTPS
+                secure: useHttps, // Only enable secure flag when HTTPS is actually used
+                httpOnly: true,
+                sameSite: 'strict',
                 maxAge: 24 * 60 * 60 * 1000 // 24 hours
             }
         });
@@ -59,20 +91,73 @@ class BotDashboard {
     }
     
     setupRoutes() {
-        // Main dashboard
+        // Main dashboard - serve minified HTML in production
         this.app.get('/', (req, res) => {
-            res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+            const isDevelopment = process.env.NODE_ENV !== 'production';
+            const htmlFile = isDevelopment ? 'dashboard.html' : 'dashboard.min.html';
+            const htmlPath = path.join(__dirname, 'public', htmlFile);
+
+            // Check if file exists
+            const fs = require('fs');
+            if (!fs.existsSync(htmlPath)) {
+                console.error(`[DASHBOARD] ${htmlFile} not found! Run 'npm run build' first.`);
+                return res.status(500).send('<!DOCTYPE html><html><body><h1>Error</h1><p>Dashboard not built. Run: npm run build</p></body></html>');
+            }
+
+            res.sendFile(htmlPath);
+        });
+
+        // Dynamic script serving: dev = dashboard.js, prod = dashboard.min.js
+        this.app.get('/app.js', (req, res) => {
+            const isDevelopment = process.env.NODE_ENV !== 'production';
+            const scriptFile = isDevelopment ? 'dashboard.js' : 'dashboard.min.js';
+            const scriptPath = path.join(__dirname, 'public', scriptFile);
+
+            // Check if file exists
+            const fs = require('fs');
+            if (!fs.existsSync(scriptPath)) {
+                console.error(`[DASHBOARD] ${scriptFile} not found! Run 'npm run build' first.`);
+                return res.status(500).send('// Application script not found. Run npm run build.');
+            }
+
+            res.sendFile(scriptPath);
         });
 
         // Login API
-        this.app.post('/api/login', (req, res) => {
+        this.app.post('/api/login', async (req, res) => {
             const { username, password } = req.body;
 
-            if (username === this.authUsername && password === this.authPassword) {
-                req.session.authenticated = true;
-                res.json({ success: true });
-            } else {
-                res.status(401).json({ success: false, error: 'Invalid credentials' });
+            // Input validation
+            if (!username || !password || typeof username !== 'string' || typeof password !== 'string') {
+                return res.status(400).json({ success: false, message: 'Invalid input' });
+            }
+
+            // Sanitize username (basic)
+            const sanitizedUsername = username.trim();
+
+            // Check username and password with bcrypt
+            try {
+                const isPasswordValid = await bcrypt.compare(password, this.authPasswordHash);
+
+                if (sanitizedUsername === this.authUsername && isPasswordValid) {
+                    // Regenerate session to prevent session fixation
+                    req.session.regenerate((err) => {
+                        if (err) {
+                            console.error('[DASHBOARD] Session regeneration error:', err);
+                            return res.status(500).json({ success: false, message: 'Login failed' });
+                        }
+
+                        req.session.authenticated = true;
+                        req.session.username = sanitizedUsername;
+                        res.json({ success: true });
+                    });
+                } else {
+                    // Use same error message for both username and password failures (security best practice)
+                    res.status(401).json({ success: false, message: 'Invalid credentials' });
+                }
+            } catch (error) {
+                console.error('[DASHBOARD] Login error:', error);
+                res.status(500).json({ success: false, message: 'Login failed' });
             }
         });
 
@@ -82,6 +167,7 @@ class BotDashboard {
                 if (err) {
                     res.status(500).json({ success: false, error: 'Logout failed' });
                 } else {
+                    res.clearCookie('connect.sid'); // Clear session cookie
                     res.json({ success: true });
                 }
             });

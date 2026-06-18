@@ -3,3 +3,5 @@ node_modules/
 wachan/*
 *.log
 .env
+public/dashboard.min.js
+public/dashboard.min.html
