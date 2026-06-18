@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "wa-sticker-formatter": "^4.4.4",
     "wachan": "^1.16.0"
   }
 }
