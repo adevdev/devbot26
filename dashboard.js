@@ -2,6 +2,8 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const path = require('path');
+const session = require('express-session');
+require('dotenv').config();
 
 class BotDashboard {
     constructor() {
@@ -15,23 +17,84 @@ class BotDashboard {
         this.phoneResolve = null;
         this.startBotCallback = null;
         this.stopBotCallback = null;
-        
+
+        // Load auth credentials from environment variables
+        this.authUsername = process.env.DASHBOARD_USERNAME || 'admin';
+        this.authPassword = process.env.DASHBOARD_PASSWORD || 'admin123';
+
+        this.setupMiddleware();
         this.setupRoutes();
         this.setupSocketIO();
     }
+
+    setupMiddleware() {
+        // Session middleware
+        const sessionMiddleware = session({
+            secret: process.env.SESSION_SECRET || 'devbot26-secret-key-change-this',
+            resave: false,
+            saveUninitialized: false,
+            cookie: {
+                secure: false, // set to true if using HTTPS
+                maxAge: 24 * 60 * 60 * 1000 // 24 hours
+            }
+        });
+
+        this.app.use(sessionMiddleware);
+        this.app.use(express.json());
+        this.app.use(express.static(path.join(__dirname, 'public')));
+
+        // Share session with socket.io
+        this.io.use((socket, next) => {
+            sessionMiddleware(socket.request, {}, next);
+        });
+    }
+
+    // Auth middleware
+    requireAuth(req, res, next) {
+        if (req.session && req.session.authenticated) {
+            next();
+        } else {
+            res.status(401).json({ error: 'Unauthorized' });
+        }
+    }
     
     setupRoutes() {
-        // Serve static files
-        this.app.use(express.static(path.join(__dirname, 'public')));
-        this.app.use(express.json());
-        
         // Main dashboard
         this.app.get('/', (req, res) => {
             res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
         });
-        
+
+        // Login API
+        this.app.post('/api/login', (req, res) => {
+            const { username, password } = req.body;
+
+            if (username === this.authUsername && password === this.authPassword) {
+                req.session.authenticated = true;
+                res.json({ success: true });
+            } else {
+                res.status(401).json({ success: false, error: 'Invalid credentials' });
+            }
+        });
+
+        // Logout API
+        this.app.post('/api/logout', (req, res) => {
+            req.session.destroy((err) => {
+                if (err) {
+                    res.status(500).json({ success: false, error: 'Logout failed' });
+                } else {
+                    res.json({ success: true });
+                }
+            });
+        });
+
+        // Check auth status
+        this.app.get('/api/auth-status', (req, res) => {
+            res.json({ authenticated: req.session && req.session.authenticated === true });
+        });
+
+        // Protected API endpoints
         // API: Restart bot instance
-        this.app.post('/api/restart', async (req, res) => {
+        this.app.post('/api/restart', this.requireAuth.bind(this), async (req, res) => {
             try {
                 this.addLog('info', 'Restarting bot instance...');
                 this.setStatus('restarting');
@@ -58,26 +121,26 @@ class BotDashboard {
         });
         
         // API: Shutdown bot instance
-        this.app.post('/api/shutdown', async (req, res) => {
+        this.app.post('/api/shutdown', this.requireAuth.bind(this), async (req, res) => {
             try {
                 this.addLog('info', 'Shutting down bot instance...');
-                
+
                 if (this.stopBotCallback) {
                     await this.stopBotCallback();
                 }
-                
+
                 this.setStatus('stopped');
                 this.addLog('success', 'Bot stopped. Click Start to run again.');
-                
+
                 res.json({ success: true });
             } catch (error) {
                 this.addLog('error', `Shutdown failed: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
             }
         });
-        
+
         // API: Start bot instance
-        this.app.post('/api/start', async (req, res) => {
+        this.app.post('/api/start', this.requireAuth.bind(this), async (req, res) => {
             try {
                 this.addLog('info', 'Starting bot instance...');
                 this.setStatus('connecting');
@@ -95,7 +158,7 @@ class BotDashboard {
         });
 
         // API: Stop bot (during connection)
-        this.app.post('/api/stop', async (req, res) => {
+        this.app.post('/api/stop', this.requireAuth.bind(this), async (req, res) => {
             try {
                 this.addLog('info', 'Stopping bot connection...');
 
@@ -114,7 +177,7 @@ class BotDashboard {
         });
 
         // API: Change phone number
-        this.app.post('/api/change-phone', async (req, res) => {
+        this.app.post('/api/change-phone', this.requireAuth.bind(this), async (req, res) => {
             try {
                 this.addLog('info', 'Changing phone number...');
 
@@ -149,15 +212,29 @@ class BotDashboard {
         this.io.on('connection', (socket) => {
             console.log('[DASHBOARD] Terminal client connected');
 
-            // Send existing logs
+            const isAuthenticated = socket.request.session && socket.request.session.authenticated === true;
+
+            // Send existing logs (censored if not authenticated)
+            const logsToSend = isAuthenticated ? this.logs : this.logs.map(log => this.censorLog(log));
+
             socket.emit('init', {
-                logs: this.logs,
+                logs: logsToSend,
                 status: this.botStatus,
-                hasPhone: this.phoneNumber !== null
+                hasPhone: this.phoneNumber !== null,
+                authenticated: isAuthenticated
             });
 
-            // Handle phone number submission
+            // Handle phone number submission (auth required)
             socket.on('phone-submit', (phone) => {
+                if (!isAuthenticated) {
+                    socket.emit('log', {
+                        timestamp: new Date().toISOString(),
+                        type: 'error',
+                        message: 'Authentication required'
+                    });
+                    return;
+                }
+
                 if (phone && /^\d+$/.test(phone)) {
                     this.phoneNumber = phone;
                     socket.emit('phone-accepted', { phone });
@@ -181,6 +258,33 @@ class BotDashboard {
             });
         });
     }
+
+    // Censor sensitive information in logs for non-authenticated users
+    censorLog(log) {
+        const censoredLog = { ...log };
+
+        // Pattern 1: [COMMAND] Username: .command text
+        const commandMatch = log.message.match(/^(\[COMMAND\]\s+)([^:]+):\s*(.*)$/);
+        if (commandMatch) {
+            censoredLog.message = commandMatch[1] + '[USER]: [COMMAND HIDDEN]';
+            return censoredLog;
+        }
+
+        // Pattern 2: [Username]: message (but exclude system brackets like [DASHBOARD], [EPHEMERAL], [INFO])
+        const messageMatch = log.message.match(/^(\[(?!DASHBOARD|EPHEMERAL|INFO|COMMAND)[^\]]+\]):\s*(.*)$/);
+        if (messageMatch) {
+            censoredLog.message = messageMatch[1] + ': [MESSAGE HIDDEN]';
+            return censoredLog;
+        }
+
+        // Censor phone numbers (10-15 digits)
+        censoredLog.message = censoredLog.message.replace(/\b\d{10,15}\b/g, '[PHONE CENSORED]');
+
+        // Censor pairing codes
+        censoredLog.message = censoredLog.message.replace(/PAIRING CODE:\s*[A-Z0-9-]+/gi, 'PAIRING CODE: [CENSORED]');
+
+        return censoredLog;
+    }
     
     addLog(type, message, data = {}) {
         const log = {
@@ -189,16 +293,20 @@ class BotDashboard {
             message,
             data
         };
-        
+
         this.logs.push(log);
-        
+
         // Limit logs
         if (this.logs.length > this.maxLogs) {
             this.logs.shift();
         }
-        
-        // Broadcast to clients
-        this.io.emit('log', log);
+
+        // Broadcast to clients (censored for non-authenticated)
+        this.io.sockets.sockets.forEach((socket) => {
+            const isAuthenticated = socket.request.session && socket.request.session.authenticated === true;
+            const logToSend = isAuthenticated ? log : this.censorLog(log);
+            socket.emit('log', logToSend);
+        });
     }
     
     setStatus(status) {

@@ -103,6 +103,10 @@
 
         /* Modal styles */
         dialog {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
             border: 2px solid #0f0;
             border-radius: 4px;
             background: #0a0a0a;
@@ -110,6 +114,7 @@
             box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
             min-width: 400px;
             max-width: 500px;
+            margin: 0;
         }
 
         dialog::backdrop {
@@ -173,6 +178,24 @@
         </div>
     </dialog>
 
+    <!-- Login Modal -->
+    <dialog id="loginModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Login Required</h3>
+            <p class="modal-message">Enter credentials to access controls</p>
+            <div style="margin-bottom: 20px;">
+                <input type="text" id="loginUsername" placeholder="Username"
+                    style="width: 100%; padding: 10px; background: #000; border: 1px solid #0f0; color: #0f0; font-family: 'Courier New', monospace; margin-bottom: 10px;">
+                <input type="password" id="loginPassword" placeholder="Password"
+                    style="width: 100%; padding: 10px; background: #000; border: 1px solid #0f0; color: #0f0; font-family: 'Courier New', monospace;">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="loginCancel">Cancel</button>
+                <button class="btn" id="loginSubmit">Login</button>
+            </div>
+        </div>
+    </dialog>
+
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
     <script src="/socket.io/socket.io.js"></script>
@@ -221,10 +244,11 @@
         let cursorPos = 0;
         let awaitingPhoneInput = false;
         let currentStatus = 'disconnected';
+        let isAuthenticated = false;
 
         // Terminal input handling with cursor support
         term.onData(data => {
-            if (awaitingPhoneInput) {
+            if (awaitingPhoneInput && isAuthenticated) {
                 if (data === '\r') { // Enter
                     term.write('\r\n');
                     socket.emit('phone-submit', inputBuffer.trim());
@@ -276,40 +300,55 @@
             }
         }
         
-        // Update button UI based on status
-        function updateButtons(status, hasPhone = false) {
+        // Update button UI based on status and auth
+        function updateButtons(status, hasPhone = false, authenticated = false) {
             currentStatus = status;
+            isAuthenticated = authenticated;
             const controls = document.getElementById('controls');
 
+            // Non-authenticated users: only show login button
+            if (!authenticated) {
+                controls.innerHTML = `
+                    <button class="btn" onclick="showLoginModal()">🔐 Login</button>
+                `;
+                return;
+            }
+
+            // Authenticated users: show full controls
             if (status === 'restarting') {
                 controls.innerHTML = `
                     <button class="btn loading" disabled>⟳ Restarting...</button>
+                    <button class="btn danger" onclick="logout()">🚪 Logout</button>
                 `;
             } else if (status === 'stopped') {
                 controls.innerHTML = `
                     <button class="btn" onclick="startBot()">▶ Start</button>
+                    <button class="btn danger" onclick="logout()">🚪 Logout</button>
                 `;
             } else if (status === 'connected') {
                 controls.innerHTML = `
                     <button class="btn" onclick="restartBot()">🔄 Restart</button>
                     <button class="btn danger" onclick="shutdownBot()">⏻ Shutdown</button>
+                    <button class="btn danger" onclick="logout()">🚪 Logout</button>
                 `;
             } else if (status === 'connecting') {
                 const changePhoneBtn = hasPhone ? '<button class="btn" onclick="changePhone()">📱 Change Phone</button>' : '';
                 controls.innerHTML = `
                     <button class="btn danger" onclick="stopBot()">⏹ Stop</button>
                     ${changePhoneBtn}
+                    <button class="btn danger" onclick="logout()">🚪 Logout</button>
                 `;
             } else {
                 controls.innerHTML = `
                     <button class="btn" disabled>⏳ Loading...</button>
+                    <button class="btn danger" onclick="logout()">🚪 Logout</button>
                 `;
             }
         }
         
         // Socket events
         socket.on('init', (data) => {
-            updateButtons(data.status, data.hasPhone);
+            updateButtons(data.status, data.hasPhone, data.authenticated);
             if (data.logs && data.logs.length > 0) {
                 data.logs.forEach(log => {
                     writeLine(formatLog(log));
@@ -322,13 +361,15 @@
         });
 
         socket.on('status-change', (data) => {
-            updateButtons(data.status, data.hasPhone);
+            updateButtons(data.status, data.hasPhone, isAuthenticated);
         });
 
         socket.on('request-phone', () => {
-            term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m');
-            awaitingPhoneInput = true;
-            cursorPos = 0;
+            if (isAuthenticated) {
+                term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m');
+                awaitingPhoneInput = true;
+                cursorPos = 0;
+            }
         });
 
         socket.on('phone-accepted', (data) => {
@@ -452,6 +493,81 @@
                 const response = await fetch('/api/shutdown', { method: 'POST' });
                 if (!response.ok) {
                     await showConfirm('Error', 'Failed to shutdown bot. Please try again.');
+                }
+            }
+        }
+
+        // Login/Logout functions
+        const loginModal = document.getElementById('loginModal');
+        const loginUsername = document.getElementById('loginUsername');
+        const loginPassword = document.getElementById('loginPassword');
+        const loginSubmit = document.getElementById('loginSubmit');
+        const loginCancel = document.getElementById('loginCancel');
+
+        function showLoginModal() {
+            loginUsername.value = '';
+            loginPassword.value = '';
+            loginModal.showModal();
+            loginUsername.focus();
+        }
+
+        loginCancel.addEventListener('click', () => {
+            loginModal.close();
+        });
+
+        loginSubmit.addEventListener('click', async () => {
+            const username = loginUsername.value.trim();
+            const password = loginPassword.value;
+
+            if (!username || !password) {
+                await showConfirm('Error', 'Please enter username and password');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.success) {
+                    loginModal.close();
+                    isAuthenticated = true;
+                    // Reload page to refresh socket with authenticated session
+                    window.location.reload();
+                } else {
+                    await showConfirm('Error', 'Invalid username or password');
+                    loginPassword.value = '';
+                    loginPassword.focus();
+                }
+            } catch (error) {
+                await showConfirm('Error', 'Login failed. Please try again.');
+            }
+        });
+
+        // Handle Enter key in login form
+        loginPassword.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                loginSubmit.click();
+            }
+        });
+
+        async function logout() {
+            const confirmed = await showConfirm('Logout', 'Are you sure you want to logout?');
+            if (confirmed) {
+                try {
+                    const response = await fetch('/api/logout', { method: 'POST' });
+                    if (response.ok) {
+                        isAuthenticated = false;
+                        window.location.reload();
+                    } else {
+                        await showConfirm('Error', 'Logout failed. Please try again.');
+                    }
+                } catch (error) {
+                    await showConfirm('Error', 'Logout failed. Please try again.');
                 }
             }
         }
