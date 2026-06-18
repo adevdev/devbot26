@@ -5,21 +5,21 @@ module.exports = {
     response: async function(context, next) {
         const { message, command } = context;
         const bot = require('wachan');
-        
+
         let targetMessage = null;
-        
-        // Cek quoted message (pakai getQuoted seperti s2i.js)
+
+        // Check quoted message (use getQuoted like s2i.js)
         const quoted = await message.getQuoted();
         if (quoted && quoted.isMedia && ['image', 'video', 'gif', 'sticker'].includes(quoted.type)) {
             targetMessage = quoted;
         }
-        
-        // Fallback ke message sendiri
+
+        // Fallback to message itself
         if (!targetMessage && message.isMedia && ['image', 'video', 'gif', 'sticker'].includes(message.type)) {
             targetMessage = message;
         }
-        
-        // Tidak ada media
+
+        // No media found
         if (!targetMessage) {
             return `Gunakan perintah sebagai caption dari gambar/GIF.\nAtau reply/tag pesan yang berisi gambar/GIF\n\n` +
                 `Cara mengatur nama/pembuat stiker:\n` +
@@ -30,51 +30,51 @@ module.exports = {
                 `Atau menggunakan newline/baris bawah:\n` +
                 `${command.prefix}${command.usedName}\nMeow\nDev`;
         }
-        
+
         try {
-            // React proses
+            // React process indicator
             await message.react("♻️");
-            
+
             // Download media
             const mediaBuffer = await targetMessage.downloadMedia();
-            
-            // Parse pack dan author dari params
+
+            // Parse pack and author from params
             let pack = 'Hai';  // Default pack
             let author = 'Dev';  // Default author
-            
+
             if (command.parameters.length >= 1) {
                 const fullText = command.parameters.join(' ');
-                
-                // Format dengan quotes
+
+                // Format with quotes
                 const matches = fullText.match(/(?<=").+?(?=")/g);
-                
+
                 if (matches && matches.length >= 2) {
                     pack = matches[0].trim();
                     author = matches[1].trim();
                 } else if (matches && matches.length === 1) {
-                    // Hanya 1 parameter dengan quotes = author saja
+                    // Only 1 parameter with quotes = author only
                     pack = '';
                     author = matches[0].trim();
                 } else {
-                    // Split dengan newline
+                    // Split with newline
                     let divider = fullText.split('\n');
                     if (divider.length >= 2) {
                         pack = divider[0].trim();
                         author = divider[1].trim();
                     } else {
-                        // Split dengan |
+                        // Split with |
                         divider = fullText.split('|');
                         if (divider.length >= 2) {
                             pack = divider[0].trim();
                             author = divider[1].trim();
                         } else {
-                            // Split dengan .
+                            // Split with .
                             divider = fullText.split('.');
                             if (divider.length >= 2) {
                                 pack = divider[0].trim();
                                 author = divider[1].trim();
                             } else {
-                                // Hanya 1 parameter tanpa separator = author saja
+                                // Only 1 parameter without separator = author only
                                 pack = '';
                                 author = fullText.trim();
                             }
@@ -82,14 +82,14 @@ module.exports = {
                     }
                 }
             }
-            
-            // Quality berdasarkan tipe media
+
+            // Quality based on media type
             let quality = 50;
             if (['gif', 'video'].includes(targetMessage.type)) {
                 quality = 20;
             }
-            
-            // Buat/rebrand sticker
+
+            // Create/rebrand sticker
             const sticker = new Sticker(mediaBuffer, {
                 pack: pack,
                 author: author,
@@ -97,9 +97,9 @@ module.exports = {
                 id: Date.now().toString(),
                 quality: quality
             });
-            
-            // Sticker type: langsung send buffer
-            // Non-sticker: gunakan toMessage() untuk typing indicator
+
+            // Sticker type: send buffer directly
+            // Non-sticker: use toMessage() for typing indicator
             if (targetMessage.type === 'sticker') {
                 const sock = bot.getSocket();
                 const stickerBuffer = await sticker.toBuffer();
@@ -107,17 +107,17 @@ module.exports = {
                 await message.react("✅");
                 return;
             }
-            
-            // Gunakan typing indicator untuk non-sticker
+
+            // Use typing indicator for non-sticker
             const stickerMessage = await withTyping(bot, message.room, async () => {
                 return await sticker.toMessage();
             });
-            
-            // React sukses
+
+            // React success
             await message.react("✅");
-            
+
             return stickerMessage;
-            
+
         } catch (error) {
             console.error('Error membuat sticker:', error);
             await message.react("❌");

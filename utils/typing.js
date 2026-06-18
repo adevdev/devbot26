@@ -1,22 +1,22 @@
-// Utility untuk menampilkan typing indicator saat bot memproses command
+// Utility to display typing indicator while bot processes commands
 
 /**
- * Mengirim typing indicator ke chat
- * @param {Object} bot - Bot instance dari wachan
- * @param {string} roomId - ID chat room (message.room)
- * @param {boolean} isTyping - true untuk start typing, false untuk stop
+ * Send typing indicator to chat
+ * @param {Object} bot - Bot instance from wachan
+ * @param {string} roomId - Chat room ID (message.room)
+ * @param {boolean} isTyping - true to start typing, false to stop
  */
 async function sendTyping(bot, roomId, isTyping = true) {
     try {
         const sock = bot.getSocket()
         if (!sock) {
-            console.warn('⚠️ Socket tidak tersedia untuk typing indicator')
+            console.warn('⚠️ Socket not available for typing indicator')
             return
         }
-        
-        // Kirim presence update
-        // 'composing' = sedang mengetik
-        // 'paused' = berhenti mengetik
+
+        // Send presence update
+        // 'composing' = typing
+        // 'paused' = stopped typing
         const presence = isTyping ? 'composing' : 'paused'
         await sock.sendPresenceUpdate(presence, roomId)
     } catch (error) {
@@ -25,49 +25,49 @@ async function sendTyping(bot, roomId, isTyping = true) {
 }
 
 /**
- * Helper function untuk menjalankan fungsi dengan typing indicator
- * Otomatis start typing sebelum fungsi dijalankan dan stop setelah selesai
- * @param {Object} bot - Bot instance dari wachan
- * @param {string} roomId - ID chat room (message.room)
- * @param {Function} asyncFn - Async function yang akan dijalankan
+ * Helper function to run a function with typing indicator
+ * Automatically starts typing before function runs and stops after completion
+ * @param {Object} bot - Bot instance from wachan
+ * @param {string} roomId - Chat room ID (message.room)
+ * @param {Function} asyncFn - Async function to execute
  */
 async function withTyping(bot, roomId, asyncFn) {
     try {
         // Start typing
         await sendTyping(bot, roomId, true)
-        
-        // Jalankan function
+
+        // Execute function
         const result = await asyncFn()
-        
+
         // Stop typing
         await sendTyping(bot, roomId, false)
-        
+
         return result
     } catch (error) {
-        // Stop typing jika error
+        // Stop typing on error
         await sendTyping(bot, roomId, false)
         throw error
     }
 }
 
 /**
- * Membuat interval typing indicator yang berjalan terus sampai dihentikan
- * Berguna untuk operasi yang memakan waktu lama
+ * Create continuous typing indicator interval that runs until stopped
+ * Useful for long-running operations
  * @param {Object} bot - Bot instance
- * @param {string} roomId - ID chat room
- * @param {number} interval - Interval dalam ms untuk refresh typing (default 8000ms = 8 detik)
- * @returns {Function} stop function untuk menghentikan typing
+ * @param {string} roomId - Chat room ID
+ * @param {number} interval - Interval in ms to refresh typing (default 8000ms = 8 seconds)
+ * @returns {Function} stop function to stop typing
  */
 function startContinuousTyping(bot, roomId, interval = 8000) {
-    // Kirim typing pertama kali
+    // Send typing first time
     sendTyping(bot, roomId, true)
-    
-    // Set interval untuk refresh typing indicator
-    // WhatsApp presence expire setelah ~10 detik
+
+    // Set interval to refresh typing indicator
+    // WhatsApp presence expires after ~10 seconds
     const typingInterval = setInterval(() => {
         sendTyping(bot, roomId, true)
     }, interval)
-    
+
     // Return stop function
     return async () => {
         clearInterval(typingInterval)

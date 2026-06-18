@@ -49,7 +49,7 @@ dashboard.onStopBot(async () => {
     }
 });
 
-// Load semua commands dari folder
+// Load all commands from folder
 commands.fromFolder('./commands');
 
 // Log command execution
@@ -64,7 +64,7 @@ commands.beforeEach((context, next) => {
     next();
 });
 
-// Log semua pesan masuk
+// Log all incoming messages
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
     if (message.text && !message.text.startsWith('.')) {
@@ -116,15 +116,15 @@ wachan.onConnected(() => {
             }
         });
     }
-    
-    // Wrap sendMessage untuk auto-inject ephemeral 1 tahun
+
+    // Wrap sendMessage to auto-inject 1 year ephemeral
     const originalSendMessage = botSocket.sendMessage.bind(botSocket);
-    
+
     botSocket.sendMessage = async (jid, content, options = {}) => {
         // Inject ephemeral expiration
         const modifiedOptions = {
             ...options,
-            ephemeralExpiration: 31536000 // 1 tahun
+            ephemeralExpiration: 31536000 // 1 year
         };
         return originalSendMessage(jid, content, modifiedOptions);
     };
