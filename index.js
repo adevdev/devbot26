@@ -56,7 +56,8 @@ commands.fromFolder('./commands');
 commands.beforeEach((context, next) => {
     const { message, command, group } = context;
     const groupName = group ? `[${group.subject || 'Group'}] ` : '';
-    const logMsg = `${groupName}${message.sender.name || message.sender.id}: .${command.usedName} ${command.parameters.join(' ')}`;
+    const senderName = message.sender?.name || message.sender?.id || message.from || 'Unknown';
+    const logMsg = `${groupName}${senderName}: .${command.usedName} ${command.parameters.join(' ')}`;
 
     console.log(`[COMMAND] ${logMsg}`);
 
@@ -68,7 +69,8 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
     if (message.text && !message.text.startsWith('.')) {
         const groupName = group ? `[${group.subject || 'Group'}] ` : '';
-        const logMsg = `${groupName}[${message.sender.name || message.sender.id}]: ${message.text}`;
+        const senderName = message.sender?.name || message.sender?.id || message.from || 'Unknown';
+        const logMsg = `${groupName}[${senderName}]: ${message.text}`;
 
         console.log(logMsg);
     }
