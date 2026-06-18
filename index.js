@@ -6,16 +6,18 @@ commands.fromFolder('./commands');
 
 // Log command execution
 commands.beforeEach((context, next) => {
-    const { message, command } = context;
-    console.log(`[COMMAND] ${message.sender.name || message.sender.id}: .${command.name} ${command.parameters.join(' ')}`);
+    const { message, command, group } = context;
+    const groupName = group ? `[${group.subject || 'Group'}] ` : '';
+    console.log(`[COMMAND] ${groupName}${message.sender.name || message.sender.id}: .${command.usedName} ${command.parameters.join(' ')}`);
     next();
 });
 
 // Log semua pesan masuk
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
-    const { message } = context;
+    const { message, group } = context;
     if (message.text && !message.text.startsWith('.')) {
-        console.log(`[${message.sender.name || message.sender.id}]: ${message.text}`);
+        const groupName = group ? `[${group.subject || 'Group'}] ` : '';
+        console.log(`${groupName}[${message.sender.name || message.sender.id}]: ${message.text}`);
     }
     next();
 });
