@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevBot26 Terminal</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #0f0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .header {
+            background: #1a1a1a;
+            border-bottom: 2px solid #0f0;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            color: #0f0;
+            font-size: 1.2rem;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn {
+            background: #000;
+            color: #0f0;
+            border: 2px solid #0f0;
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            transition: all 0.2s;
+            min-width: 120px;
+        }
+        
+        .btn:hover:not(:disabled) {
+            background: #0f0;
+            color: #000;
+        }
+        
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .btn.danger {
+            border-color: #f00;
+            color: #f00;
+        }
+        
+        .btn.danger:hover:not(:disabled) {
+            background: #f00;
+            color: #000;
+        }
+        
+        .btn.loading {
+            border-color: #ff0;
+            color: #ff0;
+        }
+        
+        .terminal-container {
+            flex: 1;
+            padding: 1rem;
+            background: #000;
+            overflow: hidden;
+        }
+        
+        #terminal {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .xterm {
+            height: 100%;
+        }
+        
+        .xterm-viewport {
+            overflow-y: auto !important;
+        }
+
+        /* Modal styles */
+        dialog {
+            border: 2px solid #0f0;
+            border-radius: 4px;
+            background: #0a0a0a;
+            padding: 0;
+            box-shadow: 0 0 30px rgba(0, 255, 0, 0.3);
+            min-width: 400px;
+            max-width: 500px;
+        }
+
+        dialog::backdrop {
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(3px);
+        }
+
+        .modal-content {
+            padding: 24px;
+        }
+
+        .modal-title {
+            color: #0f0;
+            font-size: 18px;
+            margin-bottom: 16px;
+            text-shadow: 0 0 8px #0f0;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .modal-message {
+            color: #0f0;
+            font-size: 14px;
+            margin-bottom: 24px;
+            line-height: 1.6;
+            opacity: 0.9;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+        }
+
+        .modal-buttons .btn {
+            min-width: 100px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🤖 DevBot26 Terminal</h1>
+        <div class="controls" id="controls">
+            <!-- Buttons will be dynamically updated -->
+        </div>
+    </div>
+    
+    <div class="terminal-container">
+        <div id="terminal"></div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <dialog id="confirmModal">
+        <div class="modal-content">
+            <h3 class="modal-title" id="modalTitle">Confirm</h3>
+            <p class="modal-message" id="modalMessage">Are you sure?</p>
+            <div class="modal-buttons">
+                <button class="btn" id="modalCancel">Cancel</button>
+                <button class="btn danger" id="modalConfirm">Confirm</button>
+            </div>
+        </div>
+    </dialog>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const term = new Terminal({
+            cursorBlink: true,
+            fontSize: 14,
+            fontFamily: 'Courier New, monospace',
+            theme: {
+                background: '#000000',
+                foreground: '#00ff00',
+                cursor: '#00ff00',
+                selection: '#ffffff33',
+                black: '#000000',
+                red: '#ff0000',
+                green: '#00ff00',
+                yellow: '#ffff00',
+                blue: '#0000ff',
+                magenta: '#ff00ff',
+                cyan: '#00ffff',
+                white: '#ffffff',
+                brightBlack: '#808080',
+                brightRed: '#ff8080',
+                brightGreen: '#80ff80',
+                brightYellow: '#ffff80',
+                brightBlue: '#8080ff',
+                brightMagenta: '#ff80ff',
+                brightCyan: '#80ffff',
+                brightWhite: '#ffffff'
+            }
+        });
+        
+        const fitAddon = new FitAddon.FitAddon();
+        term.loadAddon(fitAddon);
+        
+        term.open(document.getElementById('terminal'));
+        fitAddon.fit();
+        
+        // Auto resize
+        window.addEventListener('resize', () => {
+            fitAddon.fit();
+        });
+        
+        let inputBuffer = '';
+        let cursorPos = 0;
+        let awaitingPhoneInput = false;
+        let currentStatus = 'disconnected';
+
+        // Terminal input handling with cursor support
+        term.onData(data => {
+            if (awaitingPhoneInput) {
+                if (data === '\r') { // Enter
+                    term.write('\r\n');
+                    socket.emit('phone-submit', inputBuffer.trim());
+                    inputBuffer = '';
+                    cursorPos = 0;
+                    awaitingPhoneInput = false;
+                } else if (data === '\x7F') { // Backspace
+                    if (cursorPos > 0) {
+                        inputBuffer = inputBuffer.slice(0, cursorPos - 1) + inputBuffer.slice(cursorPos);
+                        cursorPos--;
+                        redrawInput();
+                    }
+                } else if (data === '\x1b[D') { // Left arrow
+                    if (cursorPos > 0) {
+                        cursorPos--;
+                        term.write('\x1b[D');
+                    }
+                } else if (data === '\x1b[C') { // Right arrow
+                    if (cursorPos < inputBuffer.length) {
+                        cursorPos++;
+                        term.write('\x1b[C');
+                    }
+                } else if (data === '\x1b[H') { // Home
+                    while (cursorPos > 0) {
+                        term.write('\x1b[D');
+                        cursorPos--;
+                    }
+                } else if (data === '\x1b[F') { // End
+                    while (cursorPos < inputBuffer.length) {
+                        term.write('\x1b[C');
+                        cursorPos++;
+                    }
+                } else if (data >= ' ' && data <= '~') { // Printable chars
+                    inputBuffer = inputBuffer.slice(0, cursorPos) + data + inputBuffer.slice(cursorPos);
+                    cursorPos++;
+                    redrawInput();
+                }
+            }
+        });
+
+        function redrawInput() {
+            // Clear line and redraw
+            term.write('\r\x1b[K');
+            term.write('\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m' + inputBuffer);
+            // Move cursor to correct position
+            const diff = inputBuffer.length - cursorPos;
+            if (diff > 0) {
+                term.write('\x1b[' + diff + 'D');
+            }
+        }
+        
+        // Update button UI based on status
+        function updateButtons(status, hasPhone = false) {
+            currentStatus = status;
+            const controls = document.getElementById('controls');
+
+            if (status === 'restarting') {
+                controls.innerHTML = `
+                    <button class="btn loading" disabled>⟳ Restarting...</button>
+                `;
+            } else if (status === 'stopped') {
+                controls.innerHTML = `
+                    <button class="btn" onclick="startBot()">▶ Start</button>
+                `;
+            } else if (status === 'connected') {
+                controls.innerHTML = `
+                    <button class="btn" onclick="restartBot()">🔄 Restart</button>
+                    <button class="btn danger" onclick="shutdownBot()">⏻ Shutdown</button>
+                `;
+            } else if (status === 'connecting') {
+                const changePhoneBtn = hasPhone ? '<button class="btn" onclick="changePhone()">📱 Change Phone</button>' : '';
+                controls.innerHTML = `
+                    <button class="btn danger" onclick="stopBot()">⏹ Stop</button>
+                    ${changePhoneBtn}
+                `;
+            } else {
+                controls.innerHTML = `
+                    <button class="btn" disabled>⏳ Loading...</button>
+                `;
+            }
+        }
+        
+        // Socket events
+        socket.on('init', (data) => {
+            updateButtons(data.status, data.hasPhone);
+            if (data.logs && data.logs.length > 0) {
+                data.logs.forEach(log => {
+                    writeLine(formatLog(log));
+                });
+            }
+        });
+
+        socket.on('log', (log) => {
+            writeLine(formatLog(log));
+        });
+
+        socket.on('status-change', (data) => {
+            updateButtons(data.status, data.hasPhone);
+        });
+
+        socket.on('request-phone', () => {
+            term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m');
+            awaitingPhoneInput = true;
+            cursorPos = 0;
+        });
+
+        socket.on('phone-accepted', (data) => {
+            writeLine(`\x1b[1;32m✓ Phone number accepted: ${data.phone}\x1b[0m`);
+        });
+
+        socket.on('clear', () => {
+            term.clear();
+        });
+        
+        function writeLine(text) {
+            term.write(text + '\r\n');
+        }
+        
+        function formatLog(log) {
+            const timestamp = new Date(log.timestamp).toLocaleTimeString();
+            const colors = {
+                info: '\x1b[1;36m',      // Cyan
+                success: '\x1b[1;32m',   // Green
+                command: '\x1b[1;35m',   // Magenta
+                message: '\x1b[1;33m',   // Yellow
+                error: '\x1b[1;31m',     // Red
+                reset: '\x1b[0m'
+            };
+            
+            const color = colors[log.type] || colors.info;
+            const prefix = {
+                info: 'INFO',
+                success: 'OK',
+                command: 'CMD',
+                message: 'MSG',
+                error: 'ERR'
+            }[log.type] || 'LOG';
+            
+            return `${color}[${timestamp}] [${prefix}] ${log.message}${colors.reset}`;
+        }
+
+        // Modal helper function
+        const modal = document.getElementById('confirmModal');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalMessage = document.getElementById('modalMessage');
+        const modalConfirm = document.getElementById('modalConfirm');
+        const modalCancel = document.getElementById('modalCancel');
+
+        function showConfirm(title, message) {
+            return new Promise((resolve) => {
+                modalTitle.textContent = title;
+                modalMessage.textContent = message;
+                modal.showModal();
+
+                const handleConfirm = () => {
+                    cleanup();
+                    resolve(true);
+                };
+
+                const handleCancel = () => {
+                    cleanup();
+                    resolve(false);
+                };
+
+                const handleEscape = (e) => {
+                    if (e.key === 'Escape') {
+                        cleanup();
+                        resolve(false);
+                    }
+                };
+
+                const cleanup = () => {
+                    modal.close();
+                    modalConfirm.removeEventListener('click', handleConfirm);
+                    modalCancel.removeEventListener('click', handleCancel);
+                    modal.removeEventListener('keydown', handleEscape);
+                };
+
+                modalConfirm.addEventListener('click', handleConfirm);
+                modalCancel.addEventListener('click', handleCancel);
+                modal.addEventListener('keydown', handleEscape);
+            });
+        }
+
+        async function startBot() {
+            const response = await fetch('/api/start', { method: 'POST' });
+            if (!response.ok) {
+                await showConfirm('Error', 'Failed to start bot. Please try again.');
+            }
+        }
+
+        async function stopBot() {
+            const confirmed = await showConfirm('Stop Bot', 'Stop bot connection?');
+            if (confirmed) {
+                const response = await fetch('/api/stop', { method: 'POST' });
+                if (!response.ok) {
+                    await showConfirm('Error', 'Failed to stop bot. Please try again.');
+                }
+            }
+        }
+
+        async function changePhone() {
+            const confirmed = await showConfirm('Change Phone', 'Change phone number? This will stop the current connection.');
+            if (confirmed) {
+                const response = await fetch('/api/change-phone', { method: 'POST' });
+                if (!response.ok) {
+                    await showConfirm('Error', 'Failed to change phone. Please try again.');
+                }
+            }
+        }
+
+        async function restartBot() {
+            const confirmed = await showConfirm('Restart Bot', 'Restart bot instance? This will reload all connections.');
+            if (confirmed) {
+                const response = await fetch('/api/restart', { method: 'POST' });
+                if (!response.ok) {
+                    await showConfirm('Error', 'Failed to restart bot. Please try again.');
+                }
+            }
+        }
+
+        async function shutdownBot() {
+            const confirmed = await showConfirm('Shutdown Bot', 'Shutdown bot instance? You can start it again later.');
+            if (confirmed) {
+                const response = await fetch('/api/shutdown', { method: 'POST' });
+                if (!response.ok) {
+                    await showConfirm('Error', 'Failed to shutdown bot. Please try again.');
+                }
+            }
+        }
+    </script>
+</body>
+</html>
