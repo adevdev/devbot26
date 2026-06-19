@@ -23,15 +23,8 @@ console.log = function(...args) {
 
 // Start dashboard
 dashboard.start(3000).then(async () => {
-    const autoStart = process.argv.includes('--auto');
-
-    if (autoStart) {
-        dashboard.addLog('info', 'Auto-start mode: Starting bot...');
-        await initBot();
-    } else {
-        dashboard.addLog('info', 'Dashboard ready. Click Start to begin.');
-        dashboard.setStatus('stopped');
-    }
+    dashboard.addLog('info', 'Auto-starting bot...');
+    await initBot();
 });
 
 // Setup start bot handler

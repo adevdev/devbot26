@@ -6,7 +6,6 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "cross-env NODE_ENV=development node index.js",
-    "dev:auto": "cross-env NODE_ENV=development node index.js --auto",
     "start": "cross-env NODE_ENV=production node index.js",
     "build": "node obfuscate.js"
   },
