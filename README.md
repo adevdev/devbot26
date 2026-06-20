@@ -166,8 +166,10 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 Can reply to message containing code.
 
 ### Admin (Owner Only)
-- `.cadd <URL>` - Load temporary command from URL
-- `.cadd` (reply to message) - Load temporary command from message code
+- `.cadd <name> <URL>` - Load temporary command from URL with custom name
+- `.cadd <URL>` - Load temporary command from URL (auto-generated name)
+- `.cadd <name>` (reply to message) - Load temporary command from message with custom name
+- `.cadd` (reply to message) - Load temporary command from message (auto-generated name)
 
 Note: Set `OWNER_ID` in `.env` to your WhatsApp number with `@s.whatsapp.net` suffix.
 

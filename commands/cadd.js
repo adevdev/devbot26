@@ -9,12 +9,20 @@ module.exports = {
         const params = command.parameters;
         let commandCode = null;
         let source = null;
+        let cmdName = null;
 
-        // Check if URL provided
-        if (params.length > 0) {
-            const url = params[0];
+        // Parse parameters
+        // Supports:
+        // .cadd <name> <url>
+        // .cadd <url>
+        // .cadd <name> (with reply)
+        // .cadd (with reply)
 
-            // Validate URL
+        if (params.length >= 2) {
+            // Format: .cadd <name> <url>
+            cmdName = params[0];
+            const url = params[1];
+
             if (!url.startsWith('http://') && !url.startsWith('https://')) {
                 return '*Invalid URL.* URL must start with http:// or https://';
             }
@@ -26,15 +34,46 @@ module.exports = {
             } catch (error) {
                 return `*Failed to fetch URL:*\n${error.message}`;
             }
-        }
-        // Check if replying to a message
-        else {
+        } else if (params.length === 1) {
+            const param = params[0];
+
+            // Check if it's a URL
+            if (param.startsWith('http://') || param.startsWith('https://')) {
+                // Format: .cadd <url>
+                try {
+                    await message.reply('*Fetching command from URL...*');
+                    commandCode = await fetchFromURL(param);
+                    source = `URL: ${param}`;
+                } catch (error) {
+                    return `*Failed to fetch URL:*\n${error.message}`;
+                }
+            } else {
+                // Format: .cadd <name> (with reply)
+                cmdName = param;
+                const quoted = message.getQuoted();
+
+                if (!quoted || !quoted.text) {
+                    return '*Error:* No message to reply to.\n\n' +
+                           '*Usage:*\n' +
+                           '`.cadd <name>` (reply) - Load from reply with custom name\n' +
+                           '`.cadd <name> <URL>` - Load from URL with custom name\n' +
+                           '`.cadd <URL>` - Load from URL (auto name)\n' +
+                           '`.cadd` (reply) - Load from reply (auto name)';
+                }
+
+                commandCode = quoted.text;
+                source = 'Replied message';
+            }
+        } else {
+            // Format: .cadd (with reply)
             const quoted = message.getQuoted();
 
             if (!quoted || !quoted.text) {
                 return '*Usage:*\n' +
-                       '`.cadd <URL>` - Load command from URL\n' +
-                       '`.cadd` (reply to message) - Load command from message';
+                       '`.cadd <name>` (reply) - Load from reply with custom name\n' +
+                       '`.cadd <name> <URL>` - Load from URL with custom name\n' +
+                       '`.cadd <URL>` - Load from URL (auto name)\n' +
+                       '`.cadd` (reply) - Load from reply (auto name)';
             }
 
             commandCode = quoted.text;
@@ -52,8 +91,10 @@ module.exports = {
                        'Command must export object with `response` function.';
             }
 
-            // Extract command name from code or generate one
-            const cmdName = extractCommandName(commandCode) || `temp${Date.now()}`;
+            // Use provided name, or extract from code, or generate one
+            if (!cmdName) {
+                cmdName = extractCommandName(commandCode) || `temp${Date.now()}`;
+            }
 
             // Add command dynamically
             commands.add(cmdName, commandModule.response, {
