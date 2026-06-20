@@ -72,6 +72,24 @@ dashboard.onStopBot(async () => {
 // Load all commands from folder
 commands.fromFolder('./commands');
 
+// Owner-only command check
+commands.beforeEach((context, next) => {
+    const { ownerOnly } = context.command;
+    const OWNER_ID = process.env.OWNER_ID;
+
+    if (ownerOnly) {
+        if (!OWNER_ID) {
+            return '*Bot configuration error.* OWNER_ID not set in .env file.';
+        }
+
+        if (context.message.sender.id !== OWNER_ID) {
+            return '*Access denied.* Only bot owner can use this command.';
+        }
+    }
+
+    next();
+});
+
 // Special handler for "Dev" message - exclusive monitoring command
 wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const { message } = context;
@@ -95,8 +113,6 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
                      `*Uptime:* ${uptimeStr}\n` +
                      `*Messages Received:* ${messagesReceived.toLocaleString()}\n` +
                      `*Messages Sent:* ${messagesSent.toLocaleString()}\n` +
-                     `*Credentials Storage:* ${credentialsManager.getStorageType()}\n` +
-                     `*Status:* Online`;
 
         await context.reply(stats);
         messagesSent++;
