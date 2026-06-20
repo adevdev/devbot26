@@ -596,23 +596,35 @@ async function loadWhitelist() {
 }
 
 // Render whitelist table
-function renderWhitelist(numbers) {
+function renderWhitelist(users) {
     const tbody = document.getElementById('whitelistTableBody');
 
-    if (numbers.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; opacity: 0.6;">No numbers in whitelist</td></tr>';
+    if (users.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; opacity: 0.6;">No numbers in whitelist</td></tr>';
         return;
     }
 
-    tbody.innerHTML = numbers.map(number => {
+    tbody.innerHTML = users.map(user => {
+        // Handle both old format (string) and new format (object)
+        const number = typeof user === 'string' ? user : user.number;
+        const model = typeof user === 'string' ? 'qwen3-coder-next' : user.model;
+
         // Extract phone number without @s.whatsapp.net for display
         const displayNumber = number.replace('@s.whatsapp.net', '');
         const encodedNumber = encodeURIComponent(number);
+        const encodedModel = encodeURIComponent(model);
+
+        // Format model name for display
+        const modelDisplay = model === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
 
         return `
             <tr>
                 <td><strong>${displayNumber}</strong><br><small style="opacity: 0.6;">${number}</small></td>
-                <td><button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button></td>
+                <td><span class="badge">${modelDisplay}</span></td>
+                <td>
+                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button>
+                </td>
             </tr>
         `;
     }).join('');
@@ -621,13 +633,29 @@ function renderWhitelist(numbers) {
 // Render whitelist error
 function renderWhitelistError(message) {
     const tbody = document.getElementById('whitelistTableBody');
-    tbody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
 
 // Show add whitelist modal
 function showAddWhitelistModal() {
     const modal = document.getElementById('addWhitelistModal');
     document.getElementById('whitelistNumber').value = '';
+    document.getElementById('whitelistModel').value = 'qwen3-coder-next';
+    modal.showModal();
+}
+
+// Show edit whitelist modal
+function showEditWhitelistModal(encodedNumber, encodedModel) {
+    const number = decodeURIComponent(encodedNumber);
+    const model = decodeURIComponent(encodedModel);
+
+    const modal = document.getElementById('editWhitelistModal');
+    document.getElementById('editWhitelistNumber').value = number;
+    document.getElementById('editWhitelistModel').value = model;
+
+    // Store original number for API call
+    modal.dataset.number = number;
+
     modal.showModal();
 }
 
@@ -638,6 +666,7 @@ document.getElementById('addWhitelistCancel').addEventListener('click', () => {
 
 document.getElementById('addWhitelistSubmit').addEventListener('click', async () => {
     const number = document.getElementById('whitelistNumber').value.trim();
+    const model = document.getElementById('whitelistModel').value;
 
     if (!number) {
         await showAlert('Error', 'Phone number is required');
@@ -655,13 +684,15 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ number })
+            body: JSON.stringify({ number, model })
         });
 
         const data = await response.json();
 
         if (data.success) {
             document.getElementById('addWhitelistModal').close();
+            document.getElementById('whitelistNumber').value = '';
+            document.getElementById('whitelistModel').value = 'qwen3-coder-next';
             loadWhitelist();
             await showAlert('Success', 'Number added to whitelist successfully!');
         } else {
@@ -669,6 +700,50 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
         }
     } catch (error) {
         await showAlert('Error', 'Error adding number: ' + error.message);
+    }
+});
+
+// Edit whitelist modal handlers
+document.getElementById('editWhitelistCancel').addEventListener('click', () => {
+    document.getElementById('editWhitelistModal').close();
+});
+
+document.getElementById('editWhitelistSubmit').addEventListener('click', async () => {
+    const modal = document.getElementById('editWhitelistModal');
+    const oldNumber = modal.dataset.number;
+    const newNumber = document.getElementById('editWhitelistNumber').value.trim();
+    const model = document.getElementById('editWhitelistModel').value;
+
+    if (!newNumber) {
+        await showAlert('Error', 'Phone number is required');
+        return;
+    }
+
+    // Basic validation
+    if (!/^\d+(@s\.whatsapp\.net)?$/.test(newNumber)) {
+        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net suffix.');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/whitelist/${encodeURIComponent(oldNumber)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ newNumber, model })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('editWhitelistModal').close();
+            loadWhitelist();
+            await showAlert('Success', 'Whitelist entry updated successfully!');
+        } else {
+            await showAlert('Error', 'Failed to update entry: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating entry: ' + error.message);
     }
 });
 

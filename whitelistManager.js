@@ -4,8 +4,10 @@ const path = require('path');
 class WhitelistManager {
     constructor() {
         this.cacheFile = './data/whitelist.json';
-        this.whitelist = new Set();
+        this.whitelist = new Map(); // Map<number, model>
         this.initialized = false;
+        this.lastSyncTime = 0;
+        this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
 
         // Use same MongoDB client from credentialsManager
         this.credentialsManager = require('./credentialsManager');
@@ -35,8 +37,15 @@ class WhitelistManager {
         try {
             if (fs.existsSync(this.cacheFile)) {
                 const data = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
-                this.whitelist = new Set(data.numbers || []);
+                // Convert array format to Map
+                if (data.users && Array.isArray(data.users)) {
+                    this.whitelist = new Map(data.users.map(u => [u.number, u.model || 'qwen3-coder-next']));
+                } else if (data.numbers && Array.isArray(data.numbers)) {
+                    // Legacy format - convert to new format
+                    this.whitelist = new Map(data.numbers.map(n => [n, 'qwen3-coder-next']));
+                }
                 console.log(`Loaded ${this.whitelist.size} whitelisted numbers from cache`);
+                this.lastSyncTime = Date.now();
             }
         } catch (error) {
             console.error('Failed to load whitelist cache:', error.message);
@@ -46,10 +55,14 @@ class WhitelistManager {
     async saveToCache() {
         try {
             const data = {
-                numbers: Array.from(this.whitelist),
+                users: Array.from(this.whitelist.entries()).map(([number, model]) => ({
+                    number,
+                    model
+                })),
                 lastUpdated: new Date().toISOString()
             };
             fs.writeFileSync(this.cacheFile, JSON.stringify(data, null, 2));
+            this.lastSyncTime = Date.now();
         } catch (error) {
             console.error('Failed to save whitelist cache:', error.message);
         }
@@ -70,8 +83,8 @@ class WhitelistManager {
 
             const doc = await collection.findOne({ _id: 'ai_whitelist' });
 
-            if (doc && doc.numbers) {
-                this.whitelist = new Set(doc.numbers);
+            if (doc && doc.users) {
+                this.whitelist = new Map(doc.users.map(u => [u.number, u.model || 'qwen3-coder-next']));
                 await this.saveToCache();
                 console.log(`Synced ${this.whitelist.size} whitelisted numbers from MongoDB`);
             }
@@ -94,11 +107,16 @@ class WhitelistManager {
             const db = mongoClient.db();
             const collection = db.collection('devbot26');
 
+            const users = Array.from(this.whitelist.entries()).map(([number, model]) => ({
+                number,
+                model
+            }));
+
             await collection.updateOne(
                 { _id: 'ai_whitelist' },
                 {
                     $set: {
-                        numbers: Array.from(this.whitelist),
+                        users: users,
                         lastUpdated: new Date()
                     }
                 },
@@ -112,13 +130,13 @@ class WhitelistManager {
         }
     }
 
-    async addNumber(number) {
+    async addNumber(number, model = 'qwen3-coder-next') {
         await this.initialize();
 
         // Normalize format: ensure @s.whatsapp.net suffix
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
 
-        this.whitelist.add(normalized);
+        this.whitelist.set(normalized, model);
         await this.syncToMongoDB();
 
         return normalized;
@@ -140,13 +158,30 @@ class WhitelistManager {
     async isWhitelisted(number) {
         await this.initialize();
 
+        // Auto-refresh cache if TTL expired
+        if (Date.now() - this.lastSyncTime > this.CACHE_TTL) {
+            this.syncFromMongoDB().catch(err => {
+                console.error('Background whitelist sync failed:', err.message);
+            });
+        }
+
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
         return this.whitelist.has(normalized);
     }
 
+    async getModel(number) {
+        await this.initialize();
+
+        const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        return this.whitelist.get(normalized) || 'qwen3-coder-next';
+    }
+
     async getAll() {
         await this.initialize();
-        return Array.from(this.whitelist);
+        return Array.from(this.whitelist.entries()).map(([number, model]) => ({
+            number,
+            model
+        }));
     }
 
     async clear() {

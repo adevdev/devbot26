@@ -33,6 +33,10 @@ module.exports = {
             }
         }
 
+        // Get user's assigned model
+        const userModel = await whitelistManager.getModel(message.sender.id);
+        console.log(`[AI] User model: ${userModel}`);
+
         // Build prompt from quoted message + user's message
         const quotedMsg = await message.getQuoted();
         let prompt = '';
@@ -71,7 +75,7 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            const response = await callAIAPIWithTools(prompt, API_KEY);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY);
 
             stopTyping();
             return response;
@@ -177,7 +181,7 @@ function parseExaResponse(body) {
 }
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, apiKey) {
+async function callAIAPIWithTools(prompt, model, apiKey) {
     // System prompt for WhatsApp formatting
     const systemPrompt = `You are a helpful AI assistant responding via WhatsApp.
 
@@ -229,7 +233,7 @@ Market cap: ~$1.28 trillion USD`;
     ];
 
     // First API call with tools
-    let response = await callAIAPI(messages, tools, systemPrompt, apiKey);
+    let response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
 
     // Check if AI wants to use a tool
     if (response.stop_reason === 'tool_use') {
@@ -261,7 +265,7 @@ Market cap: ~$1.28 trillion USD`;
             });
 
             // Second API call with tool results
-            response = await callAIAPI(messages, tools, systemPrompt, apiKey);
+            response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
         }
     }
 
@@ -271,7 +275,7 @@ Market cap: ~$1.28 trillion USD`;
 }
 
 // Call AI API (supports OpenAI and Anthropic)
-function callAIAPI(messages, tools, systemPrompt, apiKey) {
+function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
     return new Promise((resolve, reject) => {
         let endpoint, path, payload, headers;
 
@@ -287,7 +291,7 @@ function callAIAPI(messages, tools, systemPrompt, apiKey) {
             ];
 
             const payloadObj = {
-                model: OPENAI_MODEL,
+                model: model, // Use dynamic model
                 messages: messagesWithSystem
             };
 
@@ -315,7 +319,7 @@ function callAIAPI(messages, tools, systemPrompt, apiKey) {
             path = ANTHROPIC_PATH;
 
             const payloadObj = {
-                model: ANTHROPIC_MODEL,
+                model: model, // Use dynamic model
                 max_tokens: 2048,
                 system: systemPrompt, // System prompt as separate field
                 messages: messages

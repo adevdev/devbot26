@@ -484,12 +484,13 @@
                 <thead>
                     <tr>
                         <th>Phone Number</th>
+                        <th>AI Model</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="whitelistTableBody">
                     <tr>
-                        <td colspan="2" style="text-align: center; opacity: 0.6;">Loading whitelist...</td>
+                        <td colspan="3" style="text-align: center; opacity: 0.6;">Loading whitelist...</td>
                     </tr>
                 </tbody>
             </table>
@@ -565,9 +566,41 @@
                     Optional: Add @s.whatsapp.net suffix
                 </small>
             </div>
+            <div class="input-group">
+                <label>AI Model:</label>
+                <select id="whitelistModel" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="qwen3-coder-next">Qwen3 Coder Next</option>
+                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                </select>
+            </div>
             <div class="modal-buttons">
                 <button class="btn" id="addWhitelistCancel">Cancel</button>
                 <button class="btn" id="addWhitelistSubmit">Add Number</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit Whitelist Modal -->
+    <dialog id="editWhitelistModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Edit Whitelist Entry</h3>
+            <div class="input-group">
+                <label>Phone Number:</label>
+                <input type="text" id="editWhitelistNumber" placeholder="6212345678910">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Format: Country code + number (e.g., 6212345678910)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>AI Model:</label>
+                <select id="editWhitelistModel" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="qwen3-coder-next">Qwen3 Coder Next</option>
+                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="editWhitelistCancel">Cancel</button>
+                <button class="btn" id="editWhitelistSubmit">Update</button>
             </div>
         </div>
     </dialog>

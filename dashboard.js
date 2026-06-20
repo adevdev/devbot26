@@ -431,7 +431,7 @@ class BotDashboard {
         // API: Add number to whitelist
         this.app.post('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { number } = req.body;
+                const { number, model } = req.body;
 
                 if (!number || typeof number !== 'string') {
                     return res.status(400).json({ success: false, error: 'Valid phone number is required' });
@@ -443,13 +443,67 @@ class BotDashboard {
                     return res.status(400).json({ success: false, error: 'Invalid phone number format' });
                 }
 
-                const whitelistManager = require('./whitelistManager');
-                const normalized = await whitelistManager.addNumber(sanitized);
+                // Validate model if provided
+                const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
+                const selectedModel = model && validModels.includes(model) ? model : 'claude-sonnet-4.5';
 
-                this.addLog('success', `Added ${normalized} to AI whitelist`);
-                res.json({ success: true, message: 'Number added to whitelist', number: normalized });
+                const whitelistManager = require('./whitelistManager');
+                const normalized = await whitelistManager.addNumber(sanitized, selectedModel);
+
+                this.addLog('success', `Added ${normalized} to AI whitelist with model ${selectedModel}`);
+                res.json({ success: true, message: 'Number added to whitelist', number: normalized, model: selectedModel });
             } catch (error) {
                 this.addLog('error', `Failed to add to whitelist: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update whitelist entry (change model or number)
+        this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { number } = req.params;
+                const { model, newNumber } = req.body;
+
+                // Validate model
+                const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
+                if (!model || !validModels.includes(model)) {
+                    return res.status(400).json({ success: false, error: 'Valid model is required' });
+                }
+
+                const whitelistManager = require('./whitelistManager');
+                const decodedOldNumber = decodeURIComponent(number);
+
+                // Check if old number exists
+                const isWhitelisted = await whitelistManager.isWhitelisted(decodedOldNumber);
+                if (!isWhitelisted) {
+                    return res.status(404).json({ success: false, error: 'Number not found in whitelist' });
+                }
+
+                // If number is being changed
+                if (newNumber && newNumber !== decodedOldNumber) {
+                    // Validate new number format
+                    const sanitized = newNumber.trim();
+                    if (!/^\d+(@s\.whatsapp\.net)?$/.test(sanitized)) {
+                        return res.status(400).json({ success: false, error: 'Invalid phone number format' });
+                    }
+
+                    // Remove old number
+                    await whitelistManager.removeNumber(decodedOldNumber);
+
+                    // Add new number with model
+                    const normalized = await whitelistManager.addNumber(sanitized, model);
+
+                    this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized} (${model})`);
+                    res.json({ success: true, message: 'Whitelist entry updated', number: normalized, model });
+                } else {
+                    // Just update model for same number
+                    await whitelistManager.addNumber(decodedOldNumber, model);
+
+                    this.addLog('success', `Updated ${decodedOldNumber} to model ${model}`);
+                    res.json({ success: true, message: 'Whitelist entry updated', number: decodedOldNumber, model });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to update whitelist: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
             }
         });
