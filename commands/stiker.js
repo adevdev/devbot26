@@ -21,13 +21,13 @@ module.exports = {
 
         // No media found
         if (!targetMessage) {
-            return `Gunakan perintah sebagai caption dari gambar/GIF.\nAtau reply/tag pesan yang berisi gambar/GIF\n\n` +
-                `Cara mengatur nama/pembuat stiker:\n` +
-                `Bisa menggunakan "" | . atau newline\n\n` +
-                `Contoh: ${command.prefix}${command.usedName} "Meow" "Dev"\n\n` +
-                `Cara lain: ${command.prefix}${command.usedName} Meow . Dev\n\n` +
-                `Atau: ${command.prefix}${command.usedName} Meow | Dev\n\n` +
-                `Atau menggunakan newline/baris bawah:\n` +
+            return `Use this command as caption for image/GIF.\nOr reply/quote message containing image/GIF\n\n` +
+                `How to set sticker name/author:\n` +
+                `You can use "" | . or newline\n\n` +
+                `Example: ${command.prefix}${command.usedName} "Meow" "Dev"\n\n` +
+                `Alternative: ${command.prefix}${command.usedName} Meow . Dev\n\n` +
+                `Or: ${command.prefix}${command.usedName} Meow | Dev\n\n` +
+                `Or using newline:\n` +
                 `${command.prefix}${command.usedName}\nMeow\nDev`;
         }
 
@@ -119,14 +119,14 @@ module.exports = {
             return stickerMessage;
 
         } catch (error) {
-            console.error('Error membuat sticker:', error);
+            console.error('Error creating sticker:', error);
             await message.react("❌");
-            return "❌ Gagal membuat sticker. Pastikan file yang dikirim adalah gambar atau video yang valid!";
+            return "❌ Failed to create sticker. Make sure the file is a valid image or video!";
         }
     },
     options: {
         aliases: ["sticker", "s", "wm", "stikerwm"],
-        description: "Buat stiker",
-        sectionName: "Stiker"
+        description: "Create sticker from image/video/GIF",
+        sectionName: "Sticker"
     }
 };

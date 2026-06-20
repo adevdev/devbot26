@@ -2,11 +2,11 @@ module.exports = {
     response: async (context, next) => {
         const { command } = context;
         const text = command.parameters.join(' ');
-        
+
         if (!text) {
-            return `Gunakan: ${command.prefix}echo <text>`;
+            return `Usage: ${command.prefix}echo <text>`;
         }
-        
+
         return text;
     },
     options: {

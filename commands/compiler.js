@@ -11,7 +11,7 @@ module.exports = {
 
         // Show help if no code provided
         if (!commandText && command.usedName === 'compiler') {
-            return 'Berikut list program yang bisa dijalankan:\n\n' +
+            return 'Available languages:\n\n' +
                 '.js NodeJS/Javascript\n' +
                 '.php PHP\n' +
                 '.py Python 3.6\n' +
@@ -23,27 +23,27 @@ module.exports = {
         // Language configurations
         const configs = {
             js: {
-                instruction: `Ketik: ${command.prefix}js <kode>\n\nContoh:\n${command.prefix}js console.log('Hello')\n\nAtau reply pesan yang berisi kode NodeJS\n\n*Catatan:* cl() adalah alias console.log()`,
+                instruction: `Type: ${command.prefix}js <code>\n\nExample:\n${command.prefix}js console.log('Hello')\n\nOr reply to message containing NodeJS code\n\n*Note:* cl() is an alias for console.log()`,
                 language: 'nodejs'
             },
             php: {
-                instruction: `Ketik: ${command.prefix}php <kode>\n\nContoh:\n${command.prefix}php echo "Hello";`,
+                instruction: `Type: ${command.prefix}php <code>\n\nExample:\n${command.prefix}php echo "Hello";`,
                 language: 'php'
             },
             py: {
-                instruction: `Ketik: ${command.prefix}py <kode>\n\nContoh:\n${command.prefix}py print("Hello")`,
+                instruction: `Type: ${command.prefix}py <code>\n\nExample:\n${command.prefix}py print("Hello")`,
                 language: 'python'
             },
             cp: {
-                instruction: `Ketik: ${command.prefix}cp <kode>\n\nContoh:\n${command.prefix}cp #include <stdio.h>\\nint main() { printf("Hello"); }`,
+                instruction: `Type: ${command.prefix}cp <code>\n\nExample:\n${command.prefix}cp #include <stdio.h>\\nint main() { printf("Hello"); }`,
                 language: 'c'
             },
             lua: {
-                instruction: `Ketik: ${command.prefix}lua <kode>\n\nContoh:\n${command.prefix}lua print("Hello")`,
+                instruction: `Type: ${command.prefix}lua <code>\n\nExample:\n${command.prefix}lua print("Hello")`,
                 language: 'lua'
             },
             rb: {
-                instruction: `Ketik: ${command.prefix}rb <kode>\n\nContoh:\n${command.prefix}rb puts "Hello"`,
+                instruction: `Type: ${command.prefix}rb <code>\n\nExample:\n${command.prefix}rb puts "Hello"`,
                 language: 'ruby'
             }
         };
@@ -89,7 +89,7 @@ module.exports = {
             // React success
             await message.react('✅');
 
-            return result.output || 'Tidak ada output';
+            return result.output || 'No output';
 
         } catch (error) {
             // Stop typing on error
@@ -97,12 +97,12 @@ module.exports = {
             await message.react('❌');
 
             console.error('Compiler Error:', error);
-            return '❌ Error menjalankan kode: ' + error.message;
+            return '❌ Error running code: ' + error.message;
         }
     },
     options: {
         aliases: ['js', 'php', 'py', 'cp', 'lua', 'rb'],
-        description: 'Coba kode',
-        sectionName: 'Alat'
+        description: 'Execute code in multiple languages',
+        sectionName: 'Tools'
     }
 };

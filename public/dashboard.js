@@ -413,7 +413,7 @@ async function logout() {
 }
 
 // Tab switching
-function switchTab(tabName) {
+function switchTab(tabName, buttonElement) {
     // Check authentication for commands and whitelist tabs
     if ((tabName === 'commands' || tabName === 'whitelist') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
@@ -422,7 +422,7 @@ function switchTab(tabName) {
 
     // Update tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    event.target.classList.add('active');
+    buttonElement.classList.add('active');
 
     // Update tab content
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));

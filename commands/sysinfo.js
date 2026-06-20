@@ -56,7 +56,7 @@ module.exports = {
     options: {
         aliases: ['system', 'info', 'spec', 'specs'],
         description: 'Display system information and specs',
-        sectionName: 'Alat'
+        sectionName: 'Tools'
     }
 };
 
