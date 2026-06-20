@@ -121,6 +121,7 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 - `.cp <code>` - Run C
 - `.lua <code>` - Run Lua
 - `.rb <code>` - Run Ruby
+- `.sysinfo` / `.system` / `.info` / `.spec` - Display system information and specs
 
 Can reply to message containing code.
 
