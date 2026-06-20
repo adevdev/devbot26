@@ -6,7 +6,7 @@ WhatsApp bot built with [Wachan](https://npmjs.com/package/wachan) library, feat
 
 - **Web Dashboard** - Real-time monitoring with authentication
 - **Command System** - Modular command architecture
-- **AI Assistant** - WhatsApp AI chatbot with whitelist control and fallback routing
+- **AI Assistant** - WhatsApp AI chatbot with whitelist control, web search, time tools, and fallback routing
 - **MongoDB Storage** - Optional MongoDB for credentials (deploy-friendly)
 - **Sticker Creation** - Convert images/videos/GIFs to stickers
 - **Code Compiler** - Execute code in multiple languages (JS, PHP, Python, C, Lua, Ruby)
@@ -165,6 +165,21 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 - Automatic fallback: unknown commands → AI
 - Supports OpenAI (GPT) and Anthropic (Claude)
 - Context-aware: can analyze quoted messages
+- **Web Search Tool**: AI can search the web for current information, news, prices, etc.
+- **Time Tool**: AI knows current date/time and can provide detailed timestamp information
+- **Multi-round Tool Calling**: AI can use multiple tools in sequence to answer complex queries
+
+**AI Tools in Action:**
+```
+User: "what's the bitcoin price now?"
+AI: Uses web_search → Returns current BTC price with sources
+
+User: "what day is today?"
+AI: Uses get_time → Returns current date, day of week, timezone
+
+User: "what holidays are this month?"
+AI: Uses get_time + web_search → Returns accurate holiday list for current month/year
+```
 
 **Configuration:**
 1. Set `AI_API_KEY` in `.env`
