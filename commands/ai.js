@@ -180,10 +180,51 @@ function parseExaResponse(body) {
     return null;
 }
 
+// Get current time
+function getCurrentTime() {
+    const now = new Date();
+    return JSON.stringify({
+        iso: now.toISOString(),
+        utc: now.toUTCString(),
+        local: now.toLocaleString('en-US', {
+            dateStyle: 'full',
+            timeStyle: 'long'
+        }),
+        unix: Math.floor(now.getTime() / 1000),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+        day: now.toLocaleDateString('en-US', { weekday: 'long' })
+    }, null, 2);
+}
+
 // Call AI API with tool support (multi-turn)
 async function callAIAPIWithTools(prompt, model, apiKey) {
+    // Get current date/time for context
+    const now = new Date();
+    const currentDate = now.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+    });
+    const currentTime = now.toLocaleTimeString('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        timeZoneName: 'short'
+    });
+
     // System prompt for WhatsApp formatting
     const systemPrompt = `You are a helpful AI assistant responding via WhatsApp.
+
+IMPORTANT CONTEXT:
+Current date: ${currentDate}
+Current time: ${currentTime}
+
+CRITICAL INSTRUCTIONS:
+- Your training data has a knowledge cutoff date. The current date (${currentDate}) may be AFTER your training cutoff.
+- For ANY query about current events, prices, holidays, schedules, news, weather, or time-sensitive information, you MUST use the web_search tool.
+- For queries about "today", "this month", "this year", or specific future dates, ALWAYS use web_search first.
+- Use the get_time tool if you need detailed timestamp information (unix time, ISO format, timezone, etc).
+- Do NOT rely on your training data for time-sensitive information - always search the web first.
 
 Format your responses for WhatsApp:
 - Use *bold* for emphasis on important info
@@ -214,7 +255,7 @@ Market cap: ~$1.28 trillion USD`;
         }
     ];
 
-    // Define web search tool
+    // Define tools
     const tools = [
         {
             name: 'web_search',
@@ -229,44 +270,71 @@ Market cap: ~$1.28 trillion USD`;
                 },
                 required: ['query']
             }
+        },
+        {
+            name: 'get_time',
+            description: 'Get current date and time in multiple formats. Use when user asks about current time, date, day of week, or needs timestamp.',
+            input_schema: {
+                type: 'object',
+                properties: {},
+                required: []
+            }
         }
     ];
 
-    // First API call with tools
+    // Tool calling loop (max 5 rounds to prevent infinite loops)
     let response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+    let iterations = 0;
+    const MAX_ITERATIONS = 5;
 
-    // Check if AI wants to use a tool
-    if (response.stop_reason === 'tool_use') {
-        // Find tool_use in content
-        const toolUse = response.content.find(block => block.type === 'tool_use');
+    while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
+        iterations++;
 
-        if (toolUse && toolUse.name === 'web_search') {
-            console.log('[AI] Using web search:', toolUse.input.query);
+        // Find ALL tool_use blocks in content
+        const toolUses = response.content.filter(block => block.type === 'tool_use');
 
-            // Execute search
-            const searchResults = await webSearch(toolUse.input.query);
+        if (toolUses.length === 0) break;
 
-            // Add assistant message with tool use
-            messages.push({
-                role: 'assistant',
-                content: response.content
-            });
+        // Execute all tools
+        const toolResults = [];
 
-            // Add tool result
-            messages.push({
-                role: 'user',
-                content: [
-                    {
-                        type: 'tool_result',
-                        tool_use_id: toolUse.id,
-                        content: searchResults
-                    }
-                ]
-            });
+        for (const toolUse of toolUses) {
+            let toolResult;
 
-            // Second API call with tool results
-            response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+            // Execute the appropriate tool
+            if (toolUse.name === 'web_search') {
+                console.log('[AI] Using web search:', toolUse.input.query);
+                toolResult = await webSearch(toolUse.input.query);
+            } else if (toolUse.name === 'get_time') {
+                console.log('[AI] Getting current time');
+                toolResult = getCurrentTime();
+            }
+
+            if (toolResult) {
+                toolResults.push({
+                    type: 'tool_result',
+                    tool_use_id: toolUse.id,
+                    content: toolResult
+                });
+            }
         }
+
+        if (toolResults.length === 0) break;
+
+        // Add assistant message with tool use
+        messages.push({
+            role: 'assistant',
+            content: response.content
+        });
+
+        // Add ALL tool results
+        messages.push({
+            role: 'user',
+            content: toolResults
+        });
+
+        // Next API call with tool results
+        response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
     }
 
     // Extract final text response
