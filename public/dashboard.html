@@ -37,6 +37,46 @@
             text-transform: uppercase;
             letter-spacing: 2px;
         }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .tab-btn {
+            background: transparent;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 0.4rem 1rem;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            opacity: 0.6;
+        }
+
+        .tab-btn:hover {
+            opacity: 0.8;
+            box-shadow: 0 0 10px rgba(0, 255, 0, 0.3);
+        }
+
+        .tab-btn.active {
+            background: #0f0;
+            color: #000;
+            opacity: 1;
+        }
+
+        .tab-content {
+            display: none;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        .tab-content.active {
+            display: flex;
+            flex-direction: column;
+        }
         
         .controls {
             display: flex;
@@ -101,6 +141,100 @@
             overflow-y: auto !important;
         }
 
+        /* Commands management styles */
+        .commands-container {
+            padding: 1rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .commands-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .commands-table {
+            width: 100%;
+            border-collapse: collapse;
+            border: 1px solid #0f0;
+        }
+
+        .commands-table th,
+        .commands-table td {
+            border: 1px solid #0f0;
+            padding: 0.5rem;
+            text-align: left;
+        }
+
+        .commands-table th {
+            background: #1a1a1a;
+            color: #0f0;
+            text-transform: uppercase;
+            font-size: 0.85rem;
+        }
+
+        .commands-table td {
+            color: #0f0;
+            font-size: 0.9rem;
+        }
+
+        .commands-table tr:hover {
+            background: #1a1a1a;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 0.2rem 0.5rem;
+            font-size: 0.75rem;
+            border: 1px solid #0f0;
+            background: transparent;
+            margin-right: 0.25rem;
+        }
+
+        .badge.temp {
+            color: #ff0;
+            border-color: #ff0;
+        }
+
+        .badge.owner {
+            color: #f00;
+            border-color: #f00;
+        }
+
+        .btn-small {
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        .input-group label {
+            display: block;
+            color: #0f0;
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            background: #000;
+            color: #0f0;
+            border: 1px solid #0f0;
+            padding: 0.5rem;
+            font-family: 'Courier New', monospace;
+            font-size: 0.9rem;
+        }
+
+        .input-group textarea {
+            min-height: 200px;
+            resize: vertical;
+        }
+
         /* Modal styles */
         dialog {
             position: fixed;
@@ -156,14 +290,50 @@
 </head>
 <body>
     <div class="header">
-        <h1>🤖 DevBot26 Terminal</h1>
+        <div>
+            <h1>🤖 DevBot26 Terminal</h1>
+            <div class="tabs">
+                <button class="tab-btn active" onclick="switchTab('terminal')">Terminal</button>
+                <button class="tab-btn" onclick="switchTab('commands')">Commands</button>
+            </div>
+        </div>
         <div class="controls" id="controls">
             <!-- Buttons will be dynamically updated -->
         </div>
     </div>
-    
-    <div class="terminal-container">
-        <div id="terminal"></div>
+
+    <!-- Terminal Tab -->
+    <div id="tab-terminal" class="tab-content active">
+        <div class="terminal-container">
+            <div id="terminal"></div>
+        </div>
+    </div>
+
+    <!-- Commands Tab -->
+    <div id="tab-commands" class="tab-content">
+        <div class="commands-container">
+            <div class="commands-header">
+                <h2 style="color: #0f0; font-size: 1rem;">Command Management</h2>
+                <button class="btn" onclick="showAddCommandModal()">+ Add Command</button>
+            </div>
+            <table class="commands-table">
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Description</th>
+                        <th>Section</th>
+                        <th>Aliases</th>
+                        <th>Type</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="commandsTableBody">
+                    <tr>
+                        <td colspan="6" style="text-align: center; opacity: 0.6;">Loading commands...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <!-- Confirmation Modal -->
@@ -192,6 +362,33 @@
             <div class="modal-buttons">
                 <button class="btn" id="loginCancel">Cancel</button>
                 <button class="btn" id="loginSubmit">Login</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Add Command Modal -->
+    <dialog id="addCommandModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Add Temporary Command</h3>
+            <div class="input-group">
+                <label>Command Name:</label>
+                <input type="text" id="cmdName" placeholder="mycommand">
+            </div>
+            <div class="input-group">
+                <label>Command Code:</label>
+                <textarea id="cmdCode" placeholder="module.exports = {
+    response: async (context, next) => {
+        return 'Hello from command!';
+    },
+    options: {
+        description: 'My custom command',
+        sectionName: 'Custom'
+    }
+};"></textarea>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="addCommandCancel">Cancel</button>
+                <button class="btn" id="addCommandSubmit">Add Command</button>
             </div>
         </div>
     </dialog>

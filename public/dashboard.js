@@ -374,3 +374,135 @@ async function logout() {
         }
     }
 }
+
+// Tab switching
+function switchTab(tabName) {
+    // Update tab buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    event.target.classList.add('active');
+
+    // Update tab content
+    document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(`tab-${tabName}`).classList.add('active');
+
+    // Load commands if switching to commands tab
+    if (tabName === 'commands') {
+        loadCommands();
+    }
+}
+
+// Load commands list
+async function loadCommands() {
+    try {
+        const response = await fetch('/api/commands');
+        const data = await response.json();
+
+        if (data.success) {
+            renderCommands(data.commands);
+        } else {
+            renderCommandsError('Failed to load commands');
+        }
+    } catch (error) {
+        renderCommandsError('Error loading commands: ' + error.message);
+    }
+}
+
+// Render commands table
+function renderCommands(commands) {
+    const tbody = document.getElementById('commandsTableBody');
+
+    if (commands.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No commands loaded</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = commands.map(cmd => {
+        const badges = [];
+        if (cmd.temporary) badges.push('<span class="badge temp">TEMP</span>');
+        if (cmd.ownerOnly) badges.push('<span class="badge owner">OWNER</span>');
+        if (cmd.adminOnly) badges.push('<span class="badge">ADMIN</span>');
+
+        const actions = cmd.temporary
+            ? `<button class="btn btn-small danger" onclick="removeCommand('${cmd.name}')">Remove</button>`
+            : '<span style="opacity: 0.5;">Permanent</span>';
+
+        return `
+            <tr>
+                <td><strong>${cmd.name}</strong></td>
+                <td>${cmd.description}</td>
+                <td>${cmd.sectionName}</td>
+                <td>${cmd.aliases.join(', ') || '-'}</td>
+                <td>${badges.join(' ')}<br><small style="opacity: 0.6;">${cmd.source}</small></td>
+                <td>${actions}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Render commands error
+function renderCommandsError(message) {
+    const tbody = document.getElementById('commandsTableBody');
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f00;">${message}</td></tr>`;
+}
+
+// Show add command modal
+function showAddCommandModal() {
+    const modal = document.getElementById('addCommandModal');
+    document.getElementById('cmdName').value = '';
+    document.getElementById('cmdCode').value = '';
+    modal.showModal();
+}
+
+// Add command modal handlers
+document.getElementById('addCommandCancel').addEventListener('click', () => {
+    document.getElementById('addCommandModal').close();
+});
+
+document.getElementById('addCommandSubmit').addEventListener('click', async () => {
+    const name = document.getElementById('cmdName').value.trim();
+    const code = document.getElementById('cmdCode').value.trim();
+
+    if (!name || !code) {
+        alert('Name and code are required');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/commands', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, code, source: 'Dashboard' })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('addCommandModal').close();
+            loadCommands();
+            alert('Command added successfully!');
+        } else {
+            alert('Failed to add command: ' + data.error);
+        }
+    } catch (error) {
+        alert('Error adding command: ' + error.message);
+    }
+});
+
+// Remove command
+async function removeCommand(name) {
+    const confirmed = await showConfirm('Remove Command', `Remove command "${name}"?`);
+    if (confirmed) {
+        try {
+            const response = await fetch(`/api/commands/${name}`, { method: 'DELETE' });
+            const data = await response.json();
+
+            if (data.success) {
+                loadCommands();
+            } else {
+                alert('Failed to remove command: ' + data.error);
+            }
+        } catch (error) {
+            alert('Error removing command: ' + error.message);
+        }
+    }
+}

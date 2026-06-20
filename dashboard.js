@@ -21,6 +21,7 @@ class BotDashboard {
         this.awaitingPhoneInput = false;
         this.startBotCallback = null;
         this.stopBotCallback = null;
+        this.commandsModule = null; // Reference to wachan/commands module
 
         // Load auth credentials from environment variables
         this.authUsername = process.env.DASHBOARD_USERNAME || 'admin';
@@ -296,6 +297,124 @@ class BotDashboard {
                 res.status(500).json({ success: false, error: error.message });
             }
         });
+
+        // API: Get all commands
+        this.app.get('/api/commands', this.requireAuth.bind(this), (req, res) => {
+            try {
+                if (!this.commandsModule) {
+                    return res.json({ success: true, commands: [] });
+                }
+
+                const allCommands = this.commandsModule.getCommands();
+                const commandList = [];
+
+                // Flatten commands from sections and unsectioned
+                if (allCommands.sections) {
+                    Object.entries(allCommands.sections).forEach(([section, cmds]) => {
+                        cmds.forEach(cmd => {
+                            commandList.push({
+                                name: cmd.name,
+                                aliases: cmd.aliases || [],
+                                description: cmd.description || 'No description',
+                                sectionName: cmd.sectionName || section,
+                                temporary: cmd.temporary || false,
+                                source: cmd.source || 'File',
+                                ownerOnly: cmd.ownerOnly || false,
+                                adminOnly: cmd.adminOnly || false
+                            });
+                        });
+                    });
+                }
+
+                if (allCommands.unsectioned) {
+                    allCommands.unsectioned.forEach(cmd => {
+                        commandList.push({
+                            name: cmd.name,
+                            aliases: cmd.aliases || [],
+                            description: cmd.description || 'No description',
+                            sectionName: cmd.sectionName || 'Unsectioned',
+                            temporary: cmd.temporary || false,
+                            source: cmd.source || 'File',
+                            ownerOnly: cmd.ownerOnly || false,
+                            adminOnly: cmd.adminOnly || false
+                        });
+                    });
+                }
+
+                res.json({ success: true, commands: commandList });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add temporary command
+        this.app.post('/api/commands', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { name, code, source } = req.body;
+
+                if (!name || !code) {
+                    return res.status(400).json({ success: false, error: 'Name and code are required' });
+                }
+
+                if (!this.commandsModule) {
+                    return res.status(500).json({ success: false, error: 'Commands module not available' });
+                }
+
+                // Evaluate code
+                const commandModule = this.evalCommandCode(code);
+
+                if (!commandModule || !commandModule.response) {
+                    return res.status(400).json({ success: false, error: 'Invalid command structure' });
+                }
+
+                // Add command
+                this.commandsModule.add(name, commandModule.response, {
+                    ...commandModule.options,
+                    temporary: true,
+                    source: source || 'Dashboard'
+                });
+
+                this.addLog('success', `Command '${name}' added via dashboard`);
+                res.json({ success: true, message: `Command '${name}' added successfully` });
+            } catch (error) {
+                this.addLog('error', `Failed to add command: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Remove command
+        this.app.delete('/api/commands/:name', this.requireAuth.bind(this), (req, res) => {
+            try {
+                const { name } = req.params;
+
+                if (!this.commandsModule) {
+                    return res.status(500).json({ success: false, error: 'Commands module not available' });
+                }
+
+                const cmdInfo = this.commandsModule.getCommandInfo(name);
+
+                if (!cmdInfo) {
+                    return res.status(404).json({ success: false, error: 'Command not found' });
+                }
+
+                // Only allow removing temporary commands
+                if (!cmdInfo.temporary) {
+                    return res.status(403).json({ success: false, error: 'Cannot remove permanent commands' });
+                }
+
+                // Remove command by removing its receiver
+                if (cmdInfo.receiver && typeof cmdInfo.receiver.remove === 'function') {
+                    cmdInfo.receiver.remove();
+                    this.addLog('success', `Command '${name}' removed via dashboard`);
+                    res.json({ success: true, message: `Command '${name}' removed successfully` });
+                } else {
+                    res.status(500).json({ success: false, error: 'Cannot remove command' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to remove command: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
     }
     
     setupSocketIO() {
@@ -428,9 +547,24 @@ class BotDashboard {
     onStartBot(callback) {
         this.startBotCallback = callback;
     }
-    
+
     onStopBot(callback) {
         this.stopBotCallback = callback;
+    }
+
+    setCommandsModule(commandsModule) {
+        this.commandsModule = commandsModule;
+    }
+
+    evalCommandCode(code) {
+        try {
+            const module = { exports: {} };
+            const exports = module.exports;
+            eval(code);
+            return module.exports;
+        } catch (error) {
+            throw new Error(`Eval error: ${error.message}`);
+        }
     }
     
     start(port = 3000) {

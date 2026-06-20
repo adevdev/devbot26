@@ -86,6 +86,43 @@ npm start
 
 Dashboard: `http://localhost:3000`
 
+### Command Management (Dashboard)
+
+The web dashboard includes a **Commands** tab for managing temporary commands:
+
+**Features:**
+- View all loaded commands (permanent and temporary)
+- Add new temporary commands via web interface
+- Remove temporary commands
+- See command details: aliases, section, owner-only status
+
+**Adding Commands:**
+1. Login to dashboard
+2. Navigate to "Commands" tab
+3. Click "+ Add Command" button
+4. Enter command name and code
+5. Click "Add Command"
+
+**Command Code Format:**
+```javascript
+module.exports = {
+    response: async (context, next) => {
+        const { message, command } = context;
+        return "Your response here";
+    },
+    options: {
+        description: 'Command description',
+        sectionName: 'Category',
+        aliases: ['alias1', 'alias2']
+    }
+};
+```
+
+**Notes:**
+- Temporary commands exist in memory only
+- Restarting bot clears all temporary commands
+- Permanent commands (from `/commands` folder) cannot be removed via dashboard
+
 ## First Run
 
 1. Start bot
@@ -158,6 +195,7 @@ devbot26/
 - **Real-time Logs** - See all bot activity
 - **Bot Control** - Start/stop/restart bot
 - **Status Monitor** - Connection status indicator
+- **Command Management** - Add, view, and remove temporary commands via web interface
 - **Secure Auth** - bcrypt password hashing, rate limiting
 - **Session Management** - Persistent login sessions
 

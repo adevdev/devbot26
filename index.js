@@ -40,6 +40,9 @@ process.on('SIGTERM', async () => {
 
 // Start dashboard
 dashboard.start(3000).then(async () => {
+    // Pass commands module to dashboard for command management
+    dashboard.setCommandsModule(commands);
+
     dashboard.addLog('info', 'Auto-starting bot...');
     await initBot();
 });
@@ -112,7 +115,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         const stats = `*Bot Statistics*\n\n` +
                      `*Uptime:* ${uptimeStr}\n` +
                      `*Messages Received:* ${messagesReceived.toLocaleString()}\n` +
-                     `*Messages Sent:* ${messagesSent.toLocaleString()}\n` +
+                     `*Messages Sent:* ${messagesSent.toLocaleString()}`;
 
         await context.reply(stats);
         messagesSent++;
