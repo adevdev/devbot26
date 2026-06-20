@@ -6,11 +6,13 @@ WhatsApp bot built with [Wachan](https://npmjs.com/package/wachan) library, feat
 
 - **Web Dashboard** - Real-time monitoring with authentication
 - **Command System** - Modular command architecture
+- **MongoDB Storage** - Optional MongoDB for credentials (deploy-friendly)
 - **Sticker Creation** - Convert images/videos/GIFs to stickers
 - **Code Compiler** - Execute code in multiple languages (JS, PHP, Python, C, Lua, Ruby)
 - **Auto Ephemeral** - Messages auto-expire after 1 year
 - **Pairing Code Auth** - Link device via QR or pairing code
 - **Session Persistence** - Credentials saved, no re-login needed
+- **Dev Command** - Monitor bot uptime and message statistics
 
 ## Prerequisites
 
@@ -40,7 +42,29 @@ NODE_ENV=development
 
 # HTTPS (optional)
 HTTPS_ENABLED=false
+
+# Credentials Storage
+CREDS_STORAGE=file  # or 'mongodb'
+MONGO_URI=mongodb://localhost:27017/whatsapp-bot  # required if CREDS_STORAGE=mongodb
 ```
+
+### Credentials Storage
+
+**File Storage (default)**:
+- Credentials saved to `./wachan/state/creds.json`
+- Simple, no database needed
+- Good for single-instance deployments
+
+**MongoDB Storage**:
+- Credentials saved to MongoDB collection `devbot26`
+- Deploy-friendly (Render, Heroku, Railway, etc.)
+- Credentials persist across redeploys
+- Requires MongoDB connection (MongoDB Atlas recommended)
+
+To use MongoDB:
+1. Set `CREDS_STORAGE=mongodb`
+2. Set `MONGO_URI` to your MongoDB connection string
+3. Bot auto-syncs credentials between MongoDB and local file
 
 ## Usage
 
@@ -81,6 +105,7 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 - `.ping` - Test bot response
 - `.echo <text>` - Echo back text
 - `.halo` - Greeting
+- `dev` - Show bot statistics (uptime, message counts, storage type)
 
 ### Sticker
 - `.stiker` / `.s` / `.wm` - Create sticker from image/video/GIF
@@ -116,6 +141,7 @@ devbot26/
 ├── wachan/            # Bot session data
 ├── index.js           # Bot entry point
 ├── dashboard.js       # Dashboard server
+├── credentialsManager.js  # Credentials storage handler
 ├── obfuscate.js       # Build script
 └── package.json
 ```
@@ -151,6 +177,7 @@ devbot26/
 - `bcrypt` - Password hashing
 - `helmet` - Security headers
 - `express-rate-limit` - Rate limiting
+- `mongodb` - MongoDB driver for credentials storage
 - `wa-sticker-formatter` - Sticker creation
 - `dotenv` - Environment variables
 

@@ -156,6 +156,11 @@ socket.on('init', (data) => {
 
 socket.on('log', (log) => {
     writeLine(formatLog(log));
+
+    // Re-display phone prompt if waiting for input
+    if (awaitingPhoneInput) {
+        redrawInput();
+    }
 });
 
 socket.on('status-change', (data) => {
