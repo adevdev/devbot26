@@ -16,10 +16,7 @@ async function getMongoClient() {
 
     try {
         const { MongoClient } = require('mongodb');
-        mongoClient = new MongoClient(MONGO_URI, {
-            useNewUrlParser: true,
-            useUnifiedTopology: true
-        });
+        mongoClient = new MongoClient(MONGO_URI);
         await mongoClient.connect();
         db = mongoClient.db();
         console.log('Connected to MongoDB for credentials storage');

@@ -7,6 +7,9 @@ const credentialsManager = require('./credentialsManager');
 const dashboard = new BotDashboard();
 
 let botSocket = null;
+let botStartTime = null;
+let messagesReceived = 0;
+let messagesSent = 0;
 
 // Intercept console.log to pipe to dashboard
 const originalConsoleLog = console.log.bind(console);
@@ -68,6 +71,42 @@ dashboard.onStopBot(async () => {
 
 // Load all commands from folder
 commands.fromFolder('./commands');
+
+// Special handler for "Dev" message - exclusive monitoring command
+wachan.onReceive(wachan.messageType.text, async (context, next) => {
+    const { message } = context;
+
+    if (message.text && message.text.trim() === 'Dev') {
+        const uptime = botStartTime ? Date.now() - botStartTime : 0;
+        const uptimeSeconds = Math.floor(uptime / 1000);
+        const uptimeMinutes = Math.floor(uptimeSeconds / 60);
+        const uptimeHours = Math.floor(uptimeMinutes / 60);
+        const uptimeDays = Math.floor(uptimeHours / 24);
+
+        const uptimeStr = uptimeDays > 0
+            ? `${uptimeDays}d ${uptimeHours % 24}h ${uptimeMinutes % 60}m ${uptimeSeconds % 60}s`
+            : uptimeHours > 0
+            ? `${uptimeHours}h ${uptimeMinutes % 60}m ${uptimeSeconds % 60}s`
+            : uptimeMinutes > 0
+            ? `${uptimeMinutes}m ${uptimeSeconds % 60}s`
+            : `${uptimeSeconds}s`;
+
+        const stats = `*Bot Statistics*\n\n` +
+                     `*Uptime:* ${uptimeStr}\n` +
+                     `*Messages Received:* ${messagesReceived.toLocaleString()}\n` +
+                     `*Messages Sent:* ${messagesSent.toLocaleString()}\n` +
+                     `*Credentials Storage:* ${credentialsManager.getStorageType()}\n` +
+                     `*Status:* Online`;
+
+        await context.reply(stats);
+        messagesSent++;
+
+        console.log('[DEV] Statistics sent');
+        return; // Don't pass to next handler
+    }
+
+    next();
+});
 
 // Log command execution
 commands.beforeEach((context, next) => {
@@ -132,6 +171,10 @@ async function syncCredsFromStorage() {
 // Log all incoming messages
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
+
+    // Increment received counter
+    messagesReceived++;
+
     if (message.text && !message.text.startsWith('.')) {
         const groupName = group ? `[${group.subject || 'Group'}] ` : '';
         const senderName = message.sender?.name || message.sender?.id || message.from || 'Unknown';
@@ -146,6 +189,9 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
 wachan.onReady(() => {
     console.log('Ready!');
     dashboard.setStatus('connected');
+
+    // Set bot start time for uptime tracking
+    botStartTime = Date.now();
 
     const cmds = commands.getCommands();
 
@@ -185,7 +231,7 @@ wachan.onConnected(async () => {
         });
     }
 
-    // Wrap sendMessage to auto-inject 1 year ephemeral
+    // Wrap sendMessage to auto-inject 1 year ephemeral and track sent messages
     const originalSendMessage = botSocket.sendMessage.bind(botSocket);
 
     botSocket.sendMessage = async (jid, content, options = {}) => {
@@ -194,7 +240,12 @@ wachan.onConnected(async () => {
             ...options,
             ephemeralExpiration: 31536000 // 1 year
         };
-        return originalSendMessage(jid, content, modifiedOptions);
+        const result = await originalSendMessage(jid, content, modifiedOptions);
+
+        // Track sent message
+        messagesSent++;
+
+        return result;
     };
 });
 

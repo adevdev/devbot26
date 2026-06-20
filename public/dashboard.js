@@ -90,7 +90,7 @@ term.onData(data => {
 function redrawInput() {
     // Clear line and redraw
     term.write('\r\x1b[K');
-    term.write('\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m' + inputBuffer);
+    term.write('\x1b[1;33m> Enter phone number (e.g., 6212345678910): \x1b[0m' + inputBuffer);
     // Move cursor to correct position
     const diff = inputBuffer.length - cursorPos;
     if (diff > 0) {
@@ -164,7 +164,7 @@ socket.on('status-change', (data) => {
 
 socket.on('request-phone', () => {
     if (isAuthenticated) {
-        term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 6289656262394): \x1b[0m');
+        term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 123456789): \x1b[0m');
         awaitingPhoneInput = true;
         cursorPos = 0;
     }
