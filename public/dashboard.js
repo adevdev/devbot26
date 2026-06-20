@@ -103,22 +103,14 @@ function updateButtons(status, hasPhone = false, authenticated = false) {
     currentStatus = status;
     isAuthenticated = authenticated;
     const controls = document.getElementById('controls');
-    const tabs = document.querySelector('.tabs');
 
-    // Non-authenticated users: only show login button, hide tabs
+    // Non-authenticated users: only show login button
     if (!authenticated) {
         controls.innerHTML = `
             <button class="btn" onclick="showLoginModal()">🔐 Login</button>
         `;
-        tabs.classList.add('hidden');
-        // Force terminal tab to be active
-        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
-        document.getElementById('tab-terminal').classList.add('active');
         return;
     }
-
-    // Authenticated: show tabs
-    tabs.classList.remove('hidden');
 
     // Authenticated users: show full controls
     if (status === 'restarting') {
@@ -261,10 +253,47 @@ function showConfirm(title, message) {
     });
 }
 
+function showAlert(title, message) {
+    return new Promise((resolve) => {
+        modalTitle.textContent = title;
+        modalMessage.textContent = message;
+
+        // Hide cancel button for alerts
+        modalCancel.style.display = 'none';
+        modalConfirm.textContent = 'OK';
+
+        modal.showModal();
+
+        const handleOk = () => {
+            cleanup();
+            resolve(true);
+        };
+
+        const handleEscape = (e) => {
+            if (e.key === 'Escape') {
+                cleanup();
+                resolve(true);
+            }
+        };
+
+        const cleanup = () => {
+            modal.close();
+            // Restore original state
+            modalCancel.style.display = '';
+            modalConfirm.textContent = 'Confirm';
+            modalConfirm.removeEventListener('click', handleOk);
+            modal.removeEventListener('keydown', handleEscape);
+        };
+
+        modalConfirm.addEventListener('click', handleOk);
+        modal.addEventListener('keydown', handleEscape);
+    });
+}
+
 async function startBot() {
     const response = await fetch('/api/start', { method: 'POST' });
     if (!response.ok) {
-        await showConfirm('Error', 'Failed to start bot. Please try again.');
+        await showAlert('Error', 'Failed to start bot. Please try again.');
     }
 }
 
@@ -273,7 +302,7 @@ async function stopBot() {
     if (confirmed) {
         const response = await fetch('/api/stop', { method: 'POST' });
         if (!response.ok) {
-            await showConfirm('Error', 'Failed to stop bot. Please try again.');
+            await showAlert('Error', 'Failed to stop bot. Please try again.');
         }
     }
 }
@@ -283,7 +312,7 @@ async function changePhone() {
     if (confirmed) {
         const response = await fetch('/api/change-phone', { method: 'POST' });
         if (!response.ok) {
-            await showConfirm('Error', 'Failed to change phone. Please try again.');
+            await showAlert('Error', 'Failed to change phone. Please try again.');
         }
     }
 }
@@ -293,7 +322,7 @@ async function restartBot() {
     if (confirmed) {
         const response = await fetch('/api/restart', { method: 'POST' });
         if (!response.ok) {
-            await showConfirm('Error', 'Failed to restart bot. Please try again.');
+            await showAlert('Error', 'Failed to restart bot. Please try again.');
         }
     }
 }
@@ -303,7 +332,7 @@ async function shutdownBot() {
     if (confirmed) {
         const response = await fetch('/api/shutdown', { method: 'POST' });
         if (!response.ok) {
-            await showConfirm('Error', 'Failed to shutdown bot. Please try again.');
+            await showAlert('Error', 'Failed to shutdown bot. Please try again.');
         }
     }
 }
@@ -331,7 +360,7 @@ loginSubmit.addEventListener('click', async () => {
     const password = loginPassword.value;
 
     if (!username || !password) {
-        await showConfirm('Error', 'Please enter username and password');
+        await showAlert('Error', 'Please enter username and password');
         return;
     }
 
@@ -350,12 +379,12 @@ loginSubmit.addEventListener('click', async () => {
             // Reload page to refresh socket with authenticated session
             window.location.reload();
         } else {
-            await showConfirm('Error', 'Invalid username or password');
+            await showAlert('Error', 'Invalid username or password');
             loginPassword.value = '';
             loginPassword.focus();
         }
     } catch (error) {
-        await showConfirm('Error', 'Login failed. Please try again.');
+        await showAlert('Error', 'Login failed. Please try again.');
     }
 });
 
@@ -375,16 +404,22 @@ async function logout() {
                 isAuthenticated = false;
                 window.location.reload();
             } else {
-                await showConfirm('Error', 'Logout failed. Please try again.');
+                await showAlert('Error', 'Logout failed. Please try again.');
             }
         } catch (error) {
-            await showConfirm('Error', 'Logout failed. Please try again.');
+            await showAlert('Error', 'Logout failed. Please try again.');
         }
     }
 }
 
 // Tab switching
 function switchTab(tabName) {
+    // Check authentication for commands tab
+    if (tabName === 'commands' && !isAuthenticated) {
+        showAlert('Authentication Required', 'Command management is only available for authenticated users. Please login first.');
+        return;
+    }
+
     // Update tab buttons
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
     event.target.classList.add('active');
@@ -471,7 +506,7 @@ document.getElementById('addCommandSubmit').addEventListener('click', async () =
     const code = document.getElementById('cmdCode').value.trim();
 
     if (!name || !code) {
-        alert('Name and code are required');
+        await showAlert('Error', 'Name and code are required');
         return;
     }
 
@@ -487,12 +522,12 @@ document.getElementById('addCommandSubmit').addEventListener('click', async () =
         if (data.success) {
             document.getElementById('addCommandModal').close();
             loadCommands();
-            alert('Command added successfully!');
+            await showAlert('Success', 'Command added successfully!');
         } else {
-            alert('Failed to add command: ' + data.error);
+            await showAlert('Error', 'Failed to add command: ' + data.error);
         }
     } catch (error) {
-        alert('Error adding command: ' + error.message);
+        await showAlert('Error', 'Error adding command: ' + error.message);
     }
 });
 
@@ -507,10 +542,10 @@ async function removeCommand(name) {
             if (data.success) {
                 loadCommands();
             } else {
-                alert('Failed to remove command: ' + data.error);
+                await showAlert('Error', 'Failed to remove command: ' + data.error);
             }
         } catch (error) {
-            alert('Error removing command: ' + error.message);
+            await showAlert('Error', 'Error removing command: ' + error.message);
         }
     }
 }
