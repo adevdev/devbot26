@@ -164,7 +164,7 @@ socket.on('status-change', (data) => {
 
 socket.on('request-phone', () => {
     if (isAuthenticated) {
-        term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 123456789): \x1b[0m');
+        term.write('\r\n\x1b[1;33m> Enter phone number (e.g., 6212345678910): \x1b[0m');
         awaitingPhoneInput = true;
         cursorPos = 0;
     }

@@ -76,7 +76,7 @@ commands.fromFolder('./commands');
 wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const { message } = context;
 
-    if (message.text && message.text.trim() === 'Dev') {
+    if (message.text && message.text.trim().toLowerCase() === 'dev') {
         const uptime = botStartTime ? Date.now() - botStartTime : 0;
         const uptimeSeconds = Math.floor(uptime / 1000);
         const uptimeMinutes = Math.floor(uptimeSeconds / 60);
