@@ -144,6 +144,9 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 - `.halo` - Greeting
 - `dev` - Show bot statistics (uptime, message counts, storage type)
 
+### Info
+- `.owner` / `.pemilik` / `.creator` - Get bot owner contact information
+
 ### Sticker
 - `.stiker` / `.s` / `.wm` - Create sticker from image/video/GIF
   - Reply to media or send as caption

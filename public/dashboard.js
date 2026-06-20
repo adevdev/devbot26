@@ -103,14 +103,22 @@ function updateButtons(status, hasPhone = false, authenticated = false) {
     currentStatus = status;
     isAuthenticated = authenticated;
     const controls = document.getElementById('controls');
+    const tabs = document.querySelector('.tabs');
 
-    // Non-authenticated users: only show login button
+    // Non-authenticated users: only show login button, hide tabs
     if (!authenticated) {
         controls.innerHTML = `
             <button class="btn" onclick="showLoginModal()">🔐 Login</button>
         `;
+        tabs.classList.add('hidden');
+        // Force terminal tab to be active
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById('tab-terminal').classList.add('active');
         return;
     }
+
+    // Authenticated: show tabs
+    tabs.classList.remove('hidden');
 
     // Authenticated users: show full controls
     if (status === 'restarting') {
