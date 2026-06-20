@@ -24,11 +24,13 @@ module.exports = {
         const { message, command } = context;
         const bot = require('wachan');
 
-        // Check whitelist
-        const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
+        // Check whitelist (skip if already checked by fallback handler)
+        if (!command.skipWhitelistCheck) {
+            const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
 
-        if (!isWhitelisted) {
-            return '*Access denied.* AI command is only available for whitelisted users.';
+            if (!isWhitelisted) {
+                return '*Access denied.* AI command is only available for whitelisted users.';
+            }
         }
 
         // Build prompt from quoted message + user's message
@@ -65,7 +67,7 @@ module.exports = {
         }
 
         // Start typing indicator
-        const stopTyping = startContinuousTyping(message.room);
+        const stopTyping = startContinuousTyping(bot, message.room);
 
         try {
             // Call AI API

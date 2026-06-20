@@ -1,6 +1,7 @@
 node_modules/
 .wachan/
 wachan/*
+data/*
 *.log
 .env
 public/dashboard.min.js

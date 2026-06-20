@@ -291,7 +291,10 @@ function showAlert(title, message) {
 }
 
 async function startBot() {
-    const response = await fetch('/api/start', { method: 'POST' });
+    const response = await fetch('/api/start', {
+        method: 'POST',
+        credentials: 'same-origin'
+    });
     if (!response.ok) {
         await showAlert('Error', 'Failed to start bot. Please try again.');
     }
@@ -300,7 +303,10 @@ async function startBot() {
 async function stopBot() {
     const confirmed = await showConfirm('Stop Bot', 'Stop bot connection?');
     if (confirmed) {
-        const response = await fetch('/api/stop', { method: 'POST' });
+        const response = await fetch('/api/stop', {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
         if (!response.ok) {
             await showAlert('Error', 'Failed to stop bot. Please try again.');
         }
@@ -310,7 +316,10 @@ async function stopBot() {
 async function changePhone() {
     const confirmed = await showConfirm('Change Phone', 'Change phone number? This will stop the current connection.');
     if (confirmed) {
-        const response = await fetch('/api/change-phone', { method: 'POST' });
+        const response = await fetch('/api/change-phone', {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
         if (!response.ok) {
             await showAlert('Error', 'Failed to change phone. Please try again.');
         }
@@ -320,7 +329,10 @@ async function changePhone() {
 async function restartBot() {
     const confirmed = await showConfirm('Restart Bot', 'Restart bot instance? This will reload all connections.');
     if (confirmed) {
-        const response = await fetch('/api/restart', { method: 'POST' });
+        const response = await fetch('/api/restart', {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
         if (!response.ok) {
             await showAlert('Error', 'Failed to restart bot. Please try again.');
         }
@@ -330,7 +342,10 @@ async function restartBot() {
 async function shutdownBot() {
     const confirmed = await showConfirm('Shutdown Bot', 'Shutdown bot instance? You can start it again later.');
     if (confirmed) {
-        const response = await fetch('/api/shutdown', { method: 'POST' });
+        const response = await fetch('/api/shutdown', {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
         if (!response.ok) {
             await showAlert('Error', 'Failed to shutdown bot. Please try again.');
         }
@@ -368,6 +383,7 @@ loginSubmit.addEventListener('click', async () => {
         const response = await fetch('/api/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify({ username, password })
         });
 
@@ -399,7 +415,10 @@ async function logout() {
     const confirmed = await showConfirm('Logout', 'Are you sure you want to logout?');
     if (confirmed) {
         try {
-            const response = await fetch('/api/logout', { method: 'POST' });
+            const response = await fetch('/api/logout', {
+                method: 'POST',
+                credentials: 'same-origin'
+            });
             if (response.ok) {
                 isAuthenticated = false;
                 window.location.reload();
@@ -439,7 +458,9 @@ function switchTab(tabName, buttonElement) {
 // Load commands list
 async function loadCommands() {
     try {
-        const response = await fetch('/api/commands');
+        const response = await fetch('/api/commands', {
+            credentials: 'same-origin'
+        });
         const data = await response.json();
 
         if (data.success) {
@@ -516,6 +537,7 @@ document.getElementById('addCommandSubmit').addEventListener('click', async () =
         const response = await fetch('/api/commands', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify({ name, code, source: 'Dashboard' })
         });
 
@@ -538,7 +560,10 @@ async function removeCommand(name) {
     const confirmed = await showConfirm('Remove Command', `Remove command "${name}"?`);
     if (confirmed) {
         try {
-            const response = await fetch(`/api/commands/${name}`, { method: 'DELETE' });
+            const response = await fetch(`/api/commands/${name}`, {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            });
             const data = await response.json();
 
             if (data.success) {
@@ -555,7 +580,9 @@ async function removeCommand(name) {
 // Load whitelist
 async function loadWhitelist() {
     try {
-        const response = await fetch('/api/whitelist');
+        const response = await fetch('/api/whitelist', {
+            credentials: 'same-origin'
+        });
         const data = await response.json();
 
         if (data.success) {
@@ -627,6 +654,7 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
         const response = await fetch('/api/whitelist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
             body: JSON.stringify({ number })
         });
 
@@ -652,7 +680,10 @@ async function removeWhitelistNumber(encodedNumber) {
     const confirmed = await showConfirm('Remove Number', `Remove ${displayNumber} from whitelist?`);
     if (confirmed) {
         try {
-            const response = await fetch(`/api/whitelist/${encodedNumber}`, { method: 'DELETE' });
+            const response = await fetch(`/api/whitelist/${encodedNumber}`, {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            });
             const data = await response.json();
 
             if (data.success) {

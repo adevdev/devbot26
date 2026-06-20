@@ -163,5 +163,6 @@ module.exports = {
     credentialsExist,
     deleteCreds,
     closeConnection,
-    getStorageType: () => CREDS_STORAGE
+    getStorageType: () => CREDS_STORAGE,
+    getMongoClient: getMongoClient
 };

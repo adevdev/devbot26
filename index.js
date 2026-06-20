@@ -72,28 +72,11 @@ dashboard.onStopBot(async () => {
     }
 });
 
-// Load all commands from folder
+// Load all commands from folder FIRST
 commands.fromFolder('./commands');
 
-// Owner-only command check
-commands.beforeEach((context, next) => {
-    const { ownerOnly } = context.command;
-    const OWNER_ID = process.env.OWNER_ID;
-
-    if (ownerOnly) {
-        if (!OWNER_ID) {
-            return '*Bot configuration error.* OWNER_ID not set in .env file.';
-        }
-
-        if (context.message.sender.id !== OWNER_ID) {
-            return '*Access denied.* Only bot owner can use this command.';
-        }
-    }
-
-    next();
-});
-
 // Fallback handler for unknown commands -> route to AI
+// Registered AFTER loading commands so we can check if command exists
 wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const { message } = context;
     const prefixes = wachan.settings.commandPrefixes || ['.'];
@@ -117,7 +100,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const parts = textWithoutPrefix.split(' ');
     const commandName = parts[0].toLowerCase();
 
-    // Check if command exists
+    // Check if command exists (now commands are loaded)
     const commandInfo = commands.getCommandInfo(commandName);
 
     if (commandInfo) {
@@ -126,41 +109,64 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         return;
     }
 
-    // Unknown command - check if AI command exists and route to it
-    const aiCommand = commands.getCommandInfo('ai');
-
-    if (!aiCommand) {
-        // AI command not loaded, pass through
-        next();
-        return;
-    }
-
-    // Route to AI command
-    // Reconstruct the message as AI prompt (without the unknown command prefix)
-    const aiContext = {
-        message: message,
-        command: {
-            prefix: usedPrefix,
-            name: 'ai',
-            usedName: 'ai',
-            parameters: textWithoutPrefix.split(' '), // Full text as parameters
-            description: aiCommand.description,
-            aliases: aiCommand.aliases || []
-        },
-        group: context.group
-    };
-
+    // Unknown command - check whitelist then route to AI
     try {
-        const response = await aiCommand.response(aiContext, () => {});
+        // Check whitelist first
+        const whitelistManager = require('./whitelistManager');
+        const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
+
+        if (!isWhitelisted) {
+            await message.reply('*Access denied.* AI command is only available for whitelisted users.');
+            return;
+        }
+
+        // Import AI command module directly
+        const aiCommandModule = require('./commands/ai.js');
+
+        // Reconstruct context for AI command
+        const aiContext = {
+            message: message,
+            command: {
+                prefix: usedPrefix,
+                name: 'ai',
+                usedName: 'ai',
+                parameters: textWithoutPrefix.split(' '), // Full text as parameters
+                description: 'AI assistant (fallback)',
+                aliases: [],
+                skipWhitelistCheck: true // Already checked in fallback
+            },
+            group: context.group
+        };
+
+        const response = await aiCommandModule.response(aiContext, () => {});
         if (response) {
             await message.reply(response);
             messagesSent++;
         }
     } catch (error) {
         console.error('[AI Fallback] Error:', error.message);
+        // Silently fail - don't send error to user for unknown commands
     }
 
     // Don't call next() - we handled it
+});
+
+// Owner-only command check
+commands.beforeEach((context, next) => {
+    const { ownerOnly } = context.command;
+    const OWNER_ID = process.env.OWNER_ID;
+
+    if (ownerOnly) {
+        if (!OWNER_ID) {
+            return '*Bot configuration error.* OWNER_ID not set in .env file.';
+        }
+
+        if (context.message.sender.id !== OWNER_ID) {
+            return '*Access denied.* Only bot owner can use this command.';
+        }
+    }
+
+    next();
 });
 
 // Special handler for "Dev" message - exclusive monitoring command

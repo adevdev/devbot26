@@ -66,7 +66,7 @@ class WhitelistManager {
         try {
             const mongoClient = await this.credentialsManager.getMongoClient();
             const db = mongoClient.db();
-            const collection = db.collection('whitelist');
+            const collection = db.collection('devbot26');
 
             const doc = await collection.findOne({ _id: 'ai_whitelist' });
 
@@ -92,7 +92,7 @@ class WhitelistManager {
         try {
             const mongoClient = await this.credentialsManager.getMongoClient();
             const db = mongoClient.db();
-            const collection = db.collection('whitelist');
+            const collection = db.collection('devbot26');
 
             await collection.updateOne(
                 { _id: 'ai_whitelist' },

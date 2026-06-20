@@ -116,9 +116,10 @@ module.exports = {
     },
     options: {
         aliases: ['commandadd', 'tempcmd'],
-        description: 'Dynamically load temporary command (Owner only)',
+        description: 'Dynamically load temporary command',
         sectionName: 'Admin',
-        ownerOnly: true
+        ownerOnly: true,
+        hidden: true
     }
 };
 
