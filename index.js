@@ -116,7 +116,8 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
 
         if (!isWhitelisted) {
-            await message.reply('*Access denied.* AI command is only available for whitelisted users.');
+            // Silently ignore unknown commands from non-whitelisted users
+            // Don't reveal AI feature existence
             return;
         }
 

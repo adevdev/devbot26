@@ -27,6 +27,5 @@
     "socket.io": "^4.6.1",
     "wa-sticker-formatter": "^4.4.4",
     "wachan": "^1.16.0"
-  },
-  "devDependencies": {}
+  }
 }
