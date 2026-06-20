@@ -50,7 +50,7 @@ module.exports = {
             } else {
                 // Format: .cadd <name> (with reply)
                 cmdName = param;
-                const quoted = message.getQuoted();
+                const quoted = await message.getQuoted();
 
                 if (!quoted || !quoted.text) {
                     return '*Error:* No message to reply to.\n\n' +
@@ -66,7 +66,7 @@ module.exports = {
             }
         } else {
             // Format: .cadd (with reply)
-            const quoted = message.getQuoted();
+            const quoted = await message.getQuoted();
 
             if (!quoted || !quoted.text) {
                 return '*Usage:*\n' +
