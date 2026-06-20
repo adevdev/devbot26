@@ -203,6 +203,194 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     next();
 });
 
+// Special handler for shell commands with $ prefix - owner only
+wachan.onReceive(wachan.messageType.text, async (context, next) => {
+    const { message } = context;
+
+    // Check if message starts with $
+    if (!message.text || !message.text.startsWith('$')) {
+        next();
+        return;
+    }
+
+    // Owner-only check
+    const OWNER_ID = process.env.OWNER_ID;
+    if (!OWNER_ID) {
+        await message.reply('*Error:* OWNER_ID not configured.');
+        return;
+    }
+
+    if (message.sender.id !== OWNER_ID) {
+        await message.reply('*Access denied.* Shell commands are owner-only.');
+        return;
+    }
+
+    // Extract command (remove $ prefix)
+    const shellCommand = message.text.slice(1).trim();
+
+    if (!shellCommand) {
+        await message.reply('*Usage:* $<command>\n\nExample: $ls -la');
+        return;
+    }
+
+    console.log(`[SHELL] Executing: ${shellCommand}`);
+
+    try {
+        const { exec } = require('child_process');
+        const util = require('util');
+        const execPromise = util.promisify(exec);
+
+        // Execute command with 30s timeout
+        const { stdout, stderr } = await execPromise(shellCommand, {
+            timeout: 30000,
+            maxBuffer: 1024 * 1024 // 1MB buffer
+        });
+
+        // Prepare output - just raw result
+        let output = '';
+        if (stdout) {
+            output += stdout.trim();
+        }
+        if (stderr) {
+            output += (stdout ? '\n\n' : '') + stderr.trim();
+        }
+        if (!stdout && !stderr) {
+            output = '(no output)';
+        }
+
+        // Limit output length (WhatsApp has message size limits)
+        const MAX_LENGTH = 4000;
+        if (output.length > MAX_LENGTH) {
+            output = output.slice(0, MAX_LENGTH) + '\n... (truncated)';
+        }
+
+        await message.reply(output);
+        messagesSent++;
+
+    } catch (error) {
+        // Just send the error message directly
+        let errorMsg = error.message;
+
+        // Include stderr if available
+        if (error.stderr) {
+            errorMsg = error.stderr.trim();
+        }
+
+        // Include stdout if command had partial output before error
+        if (error.stdout) {
+            errorMsg = error.stdout.trim() + (error.stderr ? '\n' + error.stderr.trim() : '');
+        }
+
+        await message.reply(errorMsg);
+        messagesSent++;
+        console.error('[SHELL] Error:', error.message);
+    }
+
+    // Don't call next() - we handled it
+});
+
+// Special handler for eval commands with # prefix - owner only
+wachan.onReceive(wachan.messageType.text, async (context, next) => {
+    const { message } = context;
+
+    // Check if message starts with #
+    if (!message.text || !message.text.startsWith('#')) {
+        next();
+        return;
+    }
+
+    // Owner-only check
+    const OWNER_ID = process.env.OWNER_ID;
+    if (!OWNER_ID) {
+        await message.reply('*Error:* OWNER_ID not configured.');
+        return;
+    }
+
+    if (message.sender.id !== OWNER_ID) {
+        await message.reply('*Access denied.* Eval commands are owner-only.');
+        return;
+    }
+
+    // Extract code (remove # prefix)
+    const code = message.text.slice(1).trim();
+
+    if (!code) {
+        await message.reply('*Usage:* #<javascript code>\n\nExample: #console.log("hello")');
+        return;
+    }
+
+    console.log(`[EVAL] Executing: ${code}`);
+
+    try {
+        // Capture console.log output
+        const logs = [];
+        const originalLog = console.log;
+        console.log = (...args) => {
+            const msg = args.map(arg =>
+                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+            ).join(' ');
+            logs.push(msg);
+            originalLog(...args); // Still log to console
+        };
+
+        // Execute code
+        let result = eval(code);
+
+        // Restore console.log
+        console.log = originalLog;
+
+        // Handle async results (promises)
+        if (result instanceof Promise) {
+            result = await result;
+        }
+
+        // Prepare output
+        let output = '';
+
+        // Add captured logs
+        if (logs.length > 0) {
+            output = logs.join('\n');
+        }
+
+        // Add return value if not undefined
+        if (result !== undefined) {
+            const resultStr = typeof result === 'object'
+                ? JSON.stringify(result, null, 2)
+                : String(result);
+
+            if (output) {
+                output += '\n→ ' + resultStr;
+            } else {
+                output = resultStr;
+            }
+        }
+
+        // If no output at all
+        if (!output) {
+            output = '(no output)';
+        }
+
+        // Limit output length
+        const MAX_LENGTH = 4000;
+        if (output.length > MAX_LENGTH) {
+            output = output.slice(0, MAX_LENGTH) + '\n... (truncated)';
+        }
+
+        await message.reply(output);
+        messagesSent++;
+
+    } catch (error) {
+        // Restore console.log on error
+        console.log = originalConsoleLog;
+
+        await message.reply(error.message);
+        messagesSent++;
+        console.error('[EVAL] Error:', error.message);
+    }
+
+    // Don't call next() - we handled it
+});
+
 // Log command execution
 commands.beforeEach((context, next) => {
     const { message, command, group } = context;
