@@ -18,6 +18,7 @@ class BotDashboard {
         this.botStatus = 'disconnected';
         this.phoneNumber = null;
         this.phoneResolve = null;
+        this.awaitingPhoneInput = false;
         this.startBotCallback = null;
         this.stopBotCallback = null;
 
@@ -215,6 +216,7 @@ class BotDashboard {
                     await this.stopBotCallback();
                 }
 
+                this.awaitingPhoneInput = false;
                 this.setStatus('stopped');
                 this.addLog('success', 'Bot stopped. Click Start to run again.');
 
@@ -252,6 +254,7 @@ class BotDashboard {
                     await this.stopBotCallback();
                 }
 
+                this.awaitingPhoneInput = false;
                 this.setStatus('stopped');
                 this.addLog('success', 'Bot connection stopped.');
 
@@ -272,8 +275,9 @@ class BotDashboard {
                     await this.stopBotCallback();
                 }
 
-                // Clear saved phone
+                // Clear saved phone and awaiting state
                 this.phoneNumber = null;
+                this.awaitingPhoneInput = false;
 
                 await new Promise(resolve => setTimeout(resolve, 1000));
 
@@ -310,6 +314,11 @@ class BotDashboard {
                 authenticated: isAuthenticated
             });
 
+            // Re-emit phone request if still waiting for input
+            if (this.awaitingPhoneInput && isAuthenticated) {
+                socket.emit('request-phone');
+            }
+
             // Handle phone number submission (auth required)
             socket.on('phone-submit', (phone) => {
                 if (!isAuthenticated) {
@@ -323,6 +332,7 @@ class BotDashboard {
 
                 if (phone && /^\d+$/.test(phone)) {
                     this.phoneNumber = phone;
+                    this.awaitingPhoneInput = false;
                     socket.emit('phone-accepted', { phone });
 
                     // Resolve promise if waiting
@@ -409,6 +419,7 @@ class BotDashboard {
                 resolve(this.phoneNumber);
             } else {
                 this.phoneResolve = resolve;
+                this.awaitingPhoneInput = true;
                 this.io.emit('request-phone');
             }
         });
