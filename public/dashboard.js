@@ -414,9 +414,9 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName) {
-    // Check authentication for commands tab
-    if (tabName === 'commands' && !isAuthenticated) {
-        showAlert('Authentication Required', 'Command management is only available for authenticated users. Please login first.');
+    // Check authentication for commands and whitelist tabs
+    if ((tabName === 'commands' || tabName === 'whitelist') && !isAuthenticated) {
+        showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
 
@@ -428,9 +428,11 @@ function switchTab(tabName) {
     document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById(`tab-${tabName}`).classList.add('active');
 
-    // Load commands if switching to commands tab
+    // Load data based on tab
     if (tabName === 'commands') {
         loadCommands();
+    } else if (tabName === 'whitelist') {
+        loadWhitelist();
     }
 }
 
@@ -546,6 +548,120 @@ async function removeCommand(name) {
             }
         } catch (error) {
             await showAlert('Error', 'Error removing command: ' + error.message);
+        }
+    }
+}
+
+// Load whitelist
+async function loadWhitelist() {
+    try {
+        const response = await fetch('/api/whitelist');
+        const data = await response.json();
+
+        if (data.success) {
+            renderWhitelist(data.numbers);
+        } else {
+            renderWhitelistError('Failed to load whitelist');
+        }
+    } catch (error) {
+        renderWhitelistError('Error loading whitelist: ' + error.message);
+    }
+}
+
+// Render whitelist table
+function renderWhitelist(numbers) {
+    const tbody = document.getElementById('whitelistTableBody');
+
+    if (numbers.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="2" style="text-align: center; opacity: 0.6;">No numbers in whitelist</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = numbers.map(number => {
+        // Extract phone number without @s.whatsapp.net for display
+        const displayNumber = number.replace('@s.whatsapp.net', '');
+        const encodedNumber = encodeURIComponent(number);
+
+        return `
+            <tr>
+                <td><strong>${displayNumber}</strong><br><small style="opacity: 0.6;">${number}</small></td>
+                <td><button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button></td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Render whitelist error
+function renderWhitelistError(message) {
+    const tbody = document.getElementById('whitelistTableBody');
+    tbody.innerHTML = `<tr><td colspan="2" style="text-align: center; color: #f00;">${message}</td></tr>`;
+}
+
+// Show add whitelist modal
+function showAddWhitelistModal() {
+    const modal = document.getElementById('addWhitelistModal');
+    document.getElementById('whitelistNumber').value = '';
+    modal.showModal();
+}
+
+// Add whitelist modal handlers
+document.getElementById('addWhitelistCancel').addEventListener('click', () => {
+    document.getElementById('addWhitelistModal').close();
+});
+
+document.getElementById('addWhitelistSubmit').addEventListener('click', async () => {
+    const number = document.getElementById('whitelistNumber').value.trim();
+
+    if (!number) {
+        await showAlert('Error', 'Phone number is required');
+        return;
+    }
+
+    // Basic validation
+    if (!/^\d+(@s\.whatsapp\.net)?$/.test(number)) {
+        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net suffix.');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/whitelist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ number })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('addWhitelistModal').close();
+            loadWhitelist();
+            await showAlert('Success', 'Number added to whitelist successfully!');
+        } else {
+            await showAlert('Error', 'Failed to add number: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error adding number: ' + error.message);
+    }
+});
+
+// Remove whitelist number
+async function removeWhitelistNumber(encodedNumber) {
+    const number = decodeURIComponent(encodedNumber);
+    const displayNumber = number.replace('@s.whatsapp.net', '');
+
+    const confirmed = await showConfirm('Remove Number', `Remove ${displayNumber} from whitelist?`);
+    if (confirmed) {
+        try {
+            const response = await fetch(`/api/whitelist/${encodedNumber}`, { method: 'DELETE' });
+            const data = await response.json();
+
+            if (data.success) {
+                loadWhitelist();
+            } else {
+                await showAlert('Error', 'Failed to remove number: ' + data.error);
+            }
+        } catch (error) {
+            await showAlert('Error', 'Error removing number: ' + error.message);
         }
     }
 }

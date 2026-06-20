@@ -431,6 +431,7 @@
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('terminal')">Terminal</button>
                 <button class="tab-btn" onclick="switchTab('commands')">Commands</button>
+                <button class="tab-btn" onclick="switchTab('whitelist')">Whitelist</button>
             </div>
         </div>
         <div class="controls" id="controls">
@@ -466,6 +467,29 @@
                 <tbody id="commandsTableBody">
                     <tr>
                         <td colspan="6" style="text-align: center; opacity: 0.6;">Loading commands...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Whitelist Tab -->
+    <div id="tab-whitelist" class="tab-content">
+        <div class="commands-container">
+            <div class="commands-header">
+                <h2 style="color: #0f0; font-size: 1rem;">AI Whitelist Management</h2>
+                <button class="btn" onclick="showAddWhitelistModal()">+ Add Number</button>
+            </div>
+            <table class="commands-table">
+                <thead>
+                    <tr>
+                        <th>Phone Number</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="whitelistTableBody">
+                    <tr>
+                        <td colspan="2" style="text-align: center; opacity: 0.6;">Loading whitelist...</td>
                     </tr>
                 </tbody>
             </table>
@@ -525,6 +549,25 @@
             <div class="modal-buttons">
                 <button class="btn" id="addCommandCancel">Cancel</button>
                 <button class="btn" id="addCommandSubmit">Add Command</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Add Whitelist Modal -->
+    <dialog id="addWhitelistModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Add Number to Whitelist</h3>
+            <div class="input-group">
+                <label>Phone Number:</label>
+                <input type="text" id="whitelistNumber" placeholder="6212345678910">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Format: Country code + number (e.g., 6212345678910)<br>
+                    Optional: Add @s.whatsapp.net suffix
+                </small>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="addWhitelistCancel">Cancel</button>
+                <button class="btn" id="addWhitelistSubmit">Add Number</button>
             </div>
         </div>
     </dialog>

@@ -6,6 +6,7 @@ WhatsApp bot built with [Wachan](https://npmjs.com/package/wachan) library, feat
 
 - **Web Dashboard** - Real-time monitoring with authentication
 - **Command System** - Modular command architecture
+- **AI Assistant** - WhatsApp AI chatbot with whitelist control and fallback routing
 - **MongoDB Storage** - Optional MongoDB for credentials (deploy-friendly)
 - **Sticker Creation** - Convert images/videos/GIFs to stickers
 - **Code Compiler** - Execute code in multiple languages (JS, PHP, Python, C, Lua, Ruby)
@@ -46,6 +47,12 @@ HTTPS_ENABLED=false
 # Credentials Storage
 CREDS_STORAGE=file  # or 'mongodb'
 MONGO_URI=mongodb://localhost:27017/whatsapp-bot  # required if CREDS_STORAGE=mongodb
+
+# Bot Owner (for owner-only commands)
+OWNER_ID=6212345678910@s.whatsapp.net
+
+# AI Assistant (optional)
+AI_API_KEY=your_openai_or_anthropic_api_key_here
 ```
 
 ### Credentials Storage
@@ -147,6 +154,28 @@ After first auth, credentials saved in `./wachan/state/creds.json` - no phone nu
 ### Info
 - `.owner` / `.pemilik` / `.creator` - Get bot owner contact information
 
+### AI Assistant (Whitelist Only)
+- `.ai <question>` - Ask AI assistant
+- `.ai` (reply to message) - Analyze quoted message
+- `.ai <comment>` (reply to message) - Comment on quoted message
+- `.anything <text>` - Any unknown command routes to AI (e.g., `.translate hello`, `.summarize`, etc.)
+
+**Features:**
+- Whitelist-only access (manage via dashboard)
+- Automatic fallback: unknown commands → AI
+- Supports OpenAI (GPT) and Anthropic (Claude)
+- Context-aware: can analyze quoted messages
+
+**Configuration:**
+1. Set `AI_API_KEY` in `.env`
+2. Edit `commands/ai.js` to switch provider (`AI_PROVIDER = 'openai'` or `'anthropic'`)
+3. Add whitelisted numbers via dashboard (Whitelist tab)
+
+**Whitelist Management:**
+- Dashboard → Whitelist tab → Add/Remove numbers
+- Numbers stored in MongoDB (if configured) or `./data/whitelist.json`
+- Format: `6212345678910` or `6212345678910@s.whatsapp.net`
+
 ### Sticker
 - `.stiker` / `.s` / `.wm` - Create sticker from image/video/GIF
   - Reply to media or send as caption
@@ -178,8 +207,12 @@ Note: Set `OWNER_ID` in `.env` to your WhatsApp number with `@s.whatsapp.net` su
 ```
 devbot26/
 ├── commands/          # Command modules
+│   ├── ai.js          # AI assistant (OpenAI/Anthropic)
 │   ├── compiler.js    # Code execution
 │   ├── stiker.js      # Sticker maker
+│   ├── cadd.js        # Dynamic command loader
+│   ├── sysinfo.js     # System information
+│   ├── owner.js       # Owner contact
 │   ├── menu.js        # Help menu
 │   ├── ping.js        # Ping test
 │   ├── echo.js        # Echo command
@@ -187,9 +220,11 @@ devbot26/
 ├── utils/
 │   └── typing.js      # Typing indicator helpers
 ├── public/            # Dashboard frontend
+├── data/              # Data storage (whitelist cache)
 ├── wachan/            # Bot session data
 ├── index.js           # Bot entry point
 ├── dashboard.js       # Dashboard server
+├── whitelistManager.js   # Whitelist storage manager
 ├── credentialsManager.js  # Credentials storage handler
 ├── obfuscate.js       # Build script
 └── package.json
@@ -201,6 +236,7 @@ devbot26/
 - **Bot Control** - Start/stop/restart bot
 - **Status Monitor** - Connection status indicator
 - **Command Management** - Add, view, and remove temporary commands via web interface
+- **Whitelist Management** - Add/remove whitelisted numbers for AI command access
 - **Secure Auth** - bcrypt password hashing, rate limiting
 - **Session Management** - Persistent login sessions
 

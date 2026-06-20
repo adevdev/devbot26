@@ -93,6 +93,76 @@ commands.beforeEach((context, next) => {
     next();
 });
 
+// Fallback handler for unknown commands -> route to AI
+wachan.onReceive(wachan.messageType.text, async (context, next) => {
+    const { message } = context;
+    const prefixes = wachan.settings.commandPrefixes || ['.'];
+
+    // Check if message starts with a command prefix
+    let usedPrefix = null;
+    for (const prefix of prefixes) {
+        if (message.text.startsWith(prefix)) {
+            usedPrefix = prefix;
+            break;
+        }
+    }
+
+    if (!usedPrefix) {
+        next();
+        return;
+    }
+
+    // Extract command name
+    const textWithoutPrefix = message.text.slice(usedPrefix.length);
+    const parts = textWithoutPrefix.split(' ');
+    const commandName = parts[0].toLowerCase();
+
+    // Check if command exists
+    const commandInfo = commands.getCommandInfo(commandName);
+
+    if (commandInfo) {
+        // Command exists, let it handle normally
+        next();
+        return;
+    }
+
+    // Unknown command - check if AI command exists and route to it
+    const aiCommand = commands.getCommandInfo('ai');
+
+    if (!aiCommand) {
+        // AI command not loaded, pass through
+        next();
+        return;
+    }
+
+    // Route to AI command
+    // Reconstruct the message as AI prompt (without the unknown command prefix)
+    const aiContext = {
+        message: message,
+        command: {
+            prefix: usedPrefix,
+            name: 'ai',
+            usedName: 'ai',
+            parameters: textWithoutPrefix.split(' '), // Full text as parameters
+            description: aiCommand.description,
+            aliases: aiCommand.aliases || []
+        },
+        group: context.group
+    };
+
+    try {
+        const response = await aiCommand.response(aiContext, () => {});
+        if (response) {
+            await message.reply(response);
+            messagesSent++;
+        }
+    } catch (error) {
+        console.error('[AI Fallback] Error:', error.message);
+    }
+
+    // Don't call next() - we handled it
+});
+
 // Special handler for "Dev" message - exclusive monitoring command
 wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const { message } = context;

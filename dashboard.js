@@ -415,6 +415,64 @@ class BotDashboard {
                 res.status(500).json({ success: false, error: error.message });
             }
         });
+
+        // API: Get all whitelisted numbers
+        this.app.get('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const whitelistManager = require('./whitelistManager');
+                const numbers = await whitelistManager.getAll();
+
+                res.json({ success: true, numbers: numbers });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add number to whitelist
+        this.app.post('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { number } = req.body;
+
+                if (!number || typeof number !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Valid phone number is required' });
+                }
+
+                // Validate format (basic)
+                const sanitized = number.trim();
+                if (!/^\d+(@s\.whatsapp\.net)?$/.test(sanitized)) {
+                    return res.status(400).json({ success: false, error: 'Invalid phone number format' });
+                }
+
+                const whitelistManager = require('./whitelistManager');
+                const normalized = await whitelistManager.addNumber(sanitized);
+
+                this.addLog('success', `Added ${normalized} to AI whitelist`);
+                res.json({ success: true, message: 'Number added to whitelist', number: normalized });
+            } catch (error) {
+                this.addLog('error', `Failed to add to whitelist: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Remove number from whitelist
+        this.app.delete('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { number } = req.params;
+
+                const whitelistManager = require('./whitelistManager');
+                const existed = await whitelistManager.removeNumber(decodeURIComponent(number));
+
+                if (existed) {
+                    this.addLog('success', `Removed ${number} from AI whitelist`);
+                    res.json({ success: true, message: 'Number removed from whitelist' });
+                } else {
+                    res.status(404).json({ success: false, error: 'Number not found in whitelist' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to remove from whitelist: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
     }
     
     setupSocketIO() {
