@@ -28,27 +28,38 @@ module.exports = {
             return '*Usage:* `.airem @mention`\n\nRemove a user from AI whitelist.';
         }
 
-        // Get first mentioned number
-        const targetNumber = mentions[0];
+        // Remove all mentions from whitelist
+        const removed = [];
+        const notFound = [];
 
-        // Remove from whitelist
-        try {
-            const existed = await whitelistManager.removeNumber(targetNumber);
-            const displayNumber = '@' + targetNumber.split('@')[0];
+        for (const targetNumber of mentions) {
+            try {
+                const existed = await whitelistManager.removeNumber(targetNumber);
+                const displayNumber = '@' + targetNumber.split('@')[0];
 
-            if (existed) {
-                console.log(`[AIREM] Removed ${targetNumber}`);
-                return {
-                    text: `❌ *Removed from AI Whitelist*\n\nNumber: ${displayNumber}`,
-                    mentions: [targetNumber]
-                };
-            } else {
-                return `*Not found:* ${displayNumber} is not in whitelist.`;
+                if (existed) {
+                    removed.push({ display: displayNumber, jid: targetNumber });
+                    console.log(`[AIREM] Removed ${targetNumber}`);
+                } else {
+                    notFound.push(displayNumber);
+                }
+            } catch (error) {
+                console.error(`[AIREM] Failed to remove ${targetNumber}:`, error.message);
+                notFound.push('@' + targetNumber.split('@')[0]);
             }
-        } catch (error) {
-            console.error('[AIREM] Error:', error.message);
-            return `*Error:* ${error.message}`;
         }
+
+        if (removed.length === 0) {
+            return '*Error:* No numbers were removed (not found in whitelist).';
+        }
+
+        const numberList = removed.map(u => u.display).join('\n');
+        const mentionList = removed.map(u => u.jid);
+
+        return {
+            text: `❌ *Removed from AI Whitelist*\n\n${numberList}`,
+            mentions: mentionList
+        };
     },
     options: {
         description: 'Remove number from AI whitelist (owner only)',

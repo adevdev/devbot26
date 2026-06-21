@@ -33,19 +33,11 @@ module.exports = {
                    'Example: `.aiadd @6281234567890 claude`';
         }
 
-        // Get first mentioned number
-        const targetNumber = mentions[0];
-
-        // Parse model parameter (skip first param if it starts with @)
+        // Parse model parameter (last non-@ param)
         let modelParam = '';
-        if (command.parameters.length > 0) {
-            const firstParam = command.parameters[0];
-            // If first param starts with @, check second param for model
-            if (firstParam.startsWith('@')) {
-                modelParam = command.parameters.length > 1 ? command.parameters[1].toLowerCase() : '';
-            } else {
-                modelParam = firstParam.toLowerCase();
-            }
+        const nonMentionParams = command.parameters.filter(p => !p.startsWith('@'));
+        if (nonMentionParams.length > 0) {
+            modelParam = nonMentionParams[nonMentionParams.length - 1].toLowerCase();
         }
 
         let model;
@@ -57,21 +49,33 @@ module.exports = {
             return '*Error:* Invalid model. Use `claude` or `qwen` (default).';
         }
 
-        // Add to whitelist
-        try {
-            const normalized = await whitelistManager.addNumber(targetNumber, model);
-            const displayNumber = '@' + normalized.split('@')[0];
+        // Add all mentions to whitelist
+        const added = [];
+        const errors = [];
 
-            console.log(`[AIADD] Added ${normalized} with model ${model}`);
-
-            return {
-                text: `✅ *Added to AI Whitelist*\n\nNumber: ${displayNumber}`,
-                mentions: [normalized]
-            };
-        } catch (error) {
-            console.error('[AIADD] Error:', error.message);
-            return `*Error:* ${error.message}`;
+        for (const targetNumber of mentions) {
+            try {
+                const normalized = await whitelistManager.addNumber(targetNumber, model);
+                const displayNumber = '@' + normalized.split('@')[0];
+                added.push({ display: displayNumber, jid: normalized });
+                console.log(`[AIADD] Added ${normalized} with model ${model}`);
+            } catch (error) {
+                console.error(`[AIADD] Failed to add ${targetNumber}:`, error.message);
+                errors.push(targetNumber);
+            }
         }
+
+        if (added.length === 0) {
+            return '*Error:* Failed to add all numbers.';
+        }
+
+        const numberList = added.map(u => u.display).join('\n');
+        const mentionList = added.map(u => u.jid);
+
+        return {
+            text: `✅ *Added to AI Whitelist*\n\n${numberList}`,
+            mentions: mentionList
+        };
     },
     options: {
         description: 'Add number to AI whitelist (owner only)',
