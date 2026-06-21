@@ -224,7 +224,7 @@ devbot26/
 ├── commands/          # Command modules
 │   ├── ai.js          # AI assistant (OpenAI/Anthropic)
 │   ├── compiler.js    # Code execution
-│   ├── stiker.js      # Sticker maker
+│   ├── sticker.js     # Sticker maker
 │   ├── cadd.js        # Dynamic command loader
 │   ├── sysinfo.js     # System information
 │   ├── owner.js       # Owner contact

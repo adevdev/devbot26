@@ -125,7 +125,7 @@ module.exports = {
         }
     },
     options: {
-        aliases: ["sticker", "s", "wm", "stikerwm"],
+        aliases: ["stiker", "s", "wm", "stikerwm"],
         description: "Create sticker from image/video/GIF",
         sectionName: "Sticker"
     }
