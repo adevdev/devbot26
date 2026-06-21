@@ -54,6 +54,12 @@ class WhitelistManager {
 
     async saveToCache() {
         try {
+            // Ensure directory exists before writing
+            const dataDir = path.dirname(this.cacheFile);
+            if (!fs.existsSync(dataDir)) {
+                fs.mkdirSync(dataDir, { recursive: true });
+            }
+
             const data = {
                 users: Array.from(this.whitelist.entries()).map(([number, model]) => ({
                     number,
@@ -65,6 +71,7 @@ class WhitelistManager {
             this.lastSyncTime = Date.now();
         } catch (error) {
             console.error('Failed to save whitelist cache:', error.message);
+            // Cache is optional - continue without it if write fails
         }
     }
 

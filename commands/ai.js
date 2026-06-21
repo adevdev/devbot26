@@ -6,11 +6,14 @@ const { Jimp } = require('jimp');
 // Generate 5% thumbnail to prevent baileys auto-generation (sharp crash on Render)
 async function generateThumbnail(imageBuffer) {
     try {
+        console.log('[Thumbnail] Generating 5% thumbnail with jimp...');
         const image = await Jimp.read(imageBuffer);
         const width = Math.max(1, Math.floor(image.bitmap.width * 0.05));
         const height = Math.max(1, Math.floor(image.bitmap.height * 0.05));
+        console.log(`[Thumbnail] Original: ${image.bitmap.width}x${image.bitmap.height}, Thumbnail: ${width}x${height}`);
         const resized = await image.resize({ w: width, h: height });
         const thumb = await resized.getBuffer('image/jpeg');
+        console.log(`[Thumbnail] Generated ${thumb.length} bytes`);
         return thumb;
     } catch (error) {
         console.error('[Thumbnail] Generation failed:', error.message);
