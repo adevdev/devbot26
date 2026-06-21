@@ -1,6 +1,22 @@
 const whitelistManager = require('../whitelistManager');
 const { startContinuousTyping } = require('../utils/typing');
 const https = require('https');
+const { Jimp } = require('jimp');
+
+// Generate 5% thumbnail to prevent baileys auto-generation (sharp crash on Render)
+async function generateThumbnail(imageBuffer) {
+    try {
+        const image = await Jimp.read(imageBuffer);
+        const width = Math.max(1, Math.floor(image.bitmap.width * 0.05));
+        const height = Math.max(1, Math.floor(image.bitmap.height * 0.05));
+        const resized = await image.resize({ w: width, h: height });
+        const thumb = await resized.getBuffer('image/jpeg');
+        return thumb;
+    } catch (error) {
+        console.error('[Thumbnail] Generation failed:', error.message);
+        return null;
+    }
+}
 
 // ============================================
 // AI API Configuration - Edit these variables
@@ -345,11 +361,13 @@ Market cap: ~$1.28 trillion USD`;
                         const imageResponse = await axios.get(apiData.images[0], { responseType: 'arraybuffer' });
                         const imageBuffer = Buffer.from(imageResponse.data);
 
+                        // Generate 10x10 thumbnail to prevent baileys sharp crash
+                        const thumbnail = await generateThumbnail(imageBuffer);
+
                         // Store for immediate return (no caption, just image)
-                        // jpegThumbnail: skip auto-generation to prevent sharp crash on Render
                         imageSearchResult = {
                             image: imageBuffer,
-                            jpegThumbnail: Buffer.alloc(0),
+                            jpegThumbnail: thumbnail,
                             text: ''
                         };
 
@@ -433,9 +451,12 @@ Market cap: ~$1.28 trillion USD`;
             const imageResponse = await axios.get(imageUrls[0], { responseType: 'arraybuffer' });
             const imageBuffer = Buffer.from(imageResponse.data);
 
+            // Generate 5% thumbnail to prevent baileys sharp crash
+            const thumbnail = await generateThumbnail(imageBuffer);
+
             return {
                 image: imageBuffer,
-                jpegThumbnail: Buffer.alloc(0),
+                jpegThumbnail: thumbnail,
                 text: finalText + `\n\n_Image from Pinterest_`
             };
         } catch (error) {
