@@ -77,9 +77,15 @@ commands.fromFolder('./commands');
 
 // Fallback handler for unknown commands -> route to AI
 // Registered AFTER loading commands so we can check if command exists
-wachan.onReceive(wachan.messageType.text, async (context, next) => {
+wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message } = context;
     const prefixes = wachan.settings.commandPrefixes || ['.'];
+
+    // Skip if no text (pure media without caption)
+    if (!message.text) {
+        next();
+        return;
+    }
 
     // Check if message starts with a command prefix
     let usedPrefix = null;

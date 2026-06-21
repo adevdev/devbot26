@@ -64,6 +64,19 @@ module.exports = {
         // Build prompt from quoted message + user's message
         const quotedMsg = await message.getQuoted();
         let prompt = '';
+        let imageBuffer = null;
+        let imageType = null;
+
+        // Check for image in quoted message
+        if (quotedMsg && quotedMsg.isMedia && quotedMsg.type === 'image') {
+            imageBuffer = await quotedMsg.downloadMedia();
+            imageType = quotedMsg.mimetype || 'image/jpeg';
+        }
+        // Fallback to message itself (check even if quotedMsg exists but not image)
+        if (!imageBuffer && message.isMedia && message.type === 'image') {
+            imageBuffer = await message.downloadMedia();
+            imageType = message.mimetype || 'image/jpeg';
+        }
 
         if (quotedMsg && quotedMsg.text) {
             // If replying to a message, include quoted text first
@@ -81,11 +94,17 @@ module.exports = {
             prompt = command.parameters.join(' ') || '';
         }
 
-        if (!prompt) {
+        // If image but no prompt, use default
+        if (imageBuffer && !prompt) {
+            prompt = 'What is in this image?';
+        }
+
+        if (!prompt && !imageBuffer) {
             return '*Usage:*\n' +
                    '`.ai <your question>`\n' +
                    'or reply to a message with `.ai`\n' +
-                   'or reply to a message with `.ai <your comment>`';
+                   'or reply to a message with `.ai <your comment>`\n' +
+                   'or send/reply to an image with `.ai`';
         }
 
         // Check API key
@@ -99,7 +118,7 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType);
 
             stopTyping();
             return response;
@@ -221,7 +240,7 @@ function getCurrentTime() {
 }
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, roomJid) {
+async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null) {
     // Get current date/time for context
     const now = new Date();
     const currentDate = now.toLocaleDateString('en-US', {
@@ -274,10 +293,33 @@ _Sources:_
 
 Market cap: ~$1.28 trillion USD`;
 
+    // Build first user message with optional image
+    let firstMessageContent;
+    if (imageBuffer) {
+        // Convert image to base64
+        const base64Image = imageBuffer.toString('base64');
+        firstMessageContent = [
+            {
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: imageType,
+                    data: base64Image
+                }
+            },
+            {
+                type: 'text',
+                text: prompt
+            }
+        ];
+    } else {
+        firstMessageContent = prompt;
+    }
+
     const messages = [
         {
             role: 'user',
-            content: prompt
+            content: firstMessageContent
         }
     ];
 
