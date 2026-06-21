@@ -99,7 +99,7 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room);
 
             stopTyping();
             return response;
@@ -221,7 +221,7 @@ function getCurrentTime() {
 }
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey) {
+async function callAIAPIWithTools(prompt, model, apiKey, roomJid) {
     // Get current date/time for context
     const now = new Date();
     const currentDate = now.toLocaleDateString('en-US', {
@@ -364,15 +364,19 @@ Market cap: ~$1.28 trillion USD`;
                         const imageResponse = await axios.get(apiData.images[0], { responseType: 'arraybuffer' });
                         const imageBuffer = Buffer.from(imageResponse.data);
 
-                        // Generate 10x10 thumbnail to prevent baileys sharp crash
+                        // Generate 5% thumbnail to prevent baileys sharp crash
                         const thumbnail = await generateThumbnail(imageBuffer);
 
-                        // Store for immediate return (no caption, just image)
-                        imageSearchResult = {
+                        // Send directly via baileys to include jpegThumbnail (wachan doesn't support it)
+                        const bot = require('wachan');
+                        const sock = bot.getSocket();
+                        await sock.sendMessage(roomJid, {
                             image: imageBuffer,
-                            jpegThumbnail: thumbnail,
-                            text: ''
-                        };
+                            jpegThumbnail: thumbnail
+                        });
+
+                        // Return null to prevent wachan from sending again
+                        imageSearchResult = { handled: true };
 
                         // Don't continue with other tools
                         break;
@@ -400,9 +404,9 @@ Market cap: ~$1.28 trillion USD`;
             }
         }
 
-        // If image was found, return immediately
+        // If image was found and sent, return null (already sent via baileys)
         if (imageSearchResult) {
-            return imageSearchResult;
+            return null;
         }
 
         if (toolResults.length === 0) break;
@@ -457,11 +461,17 @@ Market cap: ~$1.28 trillion USD`;
             // Generate 5% thumbnail to prevent baileys sharp crash
             const thumbnail = await generateThumbnail(imageBuffer);
 
-            return {
+            // Send directly via baileys to include jpegThumbnail (wachan doesn't support it)
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+            await sock.sendMessage(roomJid, {
                 image: imageBuffer,
                 jpegThumbnail: thumbnail,
-                text: finalText + `\n\n_Image from Pinterest_`
-            };
+                caption: finalText + `\n\n_Image from Pinterest_`
+            });
+
+            // Return null to prevent wachan from sending again
+            return null;
         } catch (error) {
             console.error('[AI] Failed to download image:', error.message);
             // Fallback to text only
