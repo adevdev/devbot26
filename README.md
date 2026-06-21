@@ -2,6 +2,8 @@
 
 WhatsApp bot built with [Wachan](https://npmjs.com/package/wachan) library, featuring a secure web dashboard for monitoring and control.
 
+<img width="847" height="467" alt="image" src="https://github.com/user-attachments/assets/9ec54f3a-34d4-47af-98fe-e82613380aeb" />
+
 ## Features
 
 - **Web Dashboard** - Real-time monitoring with authentication
