@@ -18,7 +18,6 @@ module.exports = {
         }
 
         if (message.sender.id !== OWNER_ID) {
-            // Silent ignore for non-owner
             return;
         }
 
@@ -26,8 +25,7 @@ module.exports = {
         const mentions = getMentions(message);
 
         if (mentions.length === 0) {
-            return '*Usage:* `.airem @mention`\n\n' +
-                   'Example: `.airem @6281234567890`';
+            return '*Usage:* `.airem @mention`\n\nRemove a user from AI whitelist.';
         }
 
         // Get first mentioned number
@@ -36,17 +34,16 @@ module.exports = {
         // Remove from whitelist
         try {
             const existed = await whitelistManager.removeNumber(targetNumber);
+            const displayNumber = '@' + targetNumber.split('@')[0];
 
             if (existed) {
-                const displayNumber = targetNumber.replace('@s.whatsapp.net', '');
-                console.log(`[AIREM] Removed ${targetNumber} from whitelist`);
-
-                return `✅ *Removed from AI Whitelist*\n\n` +
-                       `Number: ${displayNumber}`;
+                console.log(`[AIREM] Removed ${targetNumber}`);
+                return {
+                    text: `❌ *Removed from AI Whitelist*\n\nNumber: ${displayNumber}`,
+                    mentions: [targetNumber]
+                };
             } else {
-                const displayNumber = targetNumber.replace('@s.whatsapp.net', '');
-                return `⚠️ *Not Found*\n\n` +
-                       `Number ${displayNumber} is not in the whitelist.`;
+                return `*Not found:* ${displayNumber} is not in whitelist.`;
             }
         } catch (error) {
             console.error('[AIREM] Error:', error.message);
@@ -57,6 +54,6 @@ module.exports = {
         description: 'Remove number from AI whitelist (owner only)',
         sectionName: 'Owner',
         ownerOnly: true,
-        hidden: true // Don't show in help menu
+        hidden: true
     }
 };

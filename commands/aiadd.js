@@ -60,14 +60,14 @@ module.exports = {
         // Add to whitelist
         try {
             const normalized = await whitelistManager.addNumber(targetNumber, model);
-            const displayNumber = normalized.replace('@s.whatsapp.net', '');
-            const modelDisplay = model === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
+            const displayNumber = '@' + normalized.split('@')[0];
 
             console.log(`[AIADD] Added ${normalized} with model ${model}`);
 
-            return `✅ *Added to AI Whitelist*\n\n` +
-                   `Number: ${displayNumber}\n` +
-                   `Model: ${modelDisplay}`;
+            return {
+                text: `✅ *Added to AI Whitelist*\n\nNumber: ${displayNumber}`,
+                mentions: [normalized]
+            };
         } catch (error) {
             console.error('[AIADD] Error:', error.message);
             return `*Error:* ${error.message}`;

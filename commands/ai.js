@@ -25,16 +25,21 @@ module.exports = {
         const bot = require('wachan');
 
         // Check whitelist (skip if already checked by fallback handler)
+        // ponytail: check both id and lid since @mentions use lid
         if (!command.skipWhitelistCheck) {
-            const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
+            const isWhitelistedById = await whitelistManager.isWhitelisted(message.sender.id);
+            const isWhitelistedByLid = message.sender.lid ? await whitelistManager.isWhitelisted(message.sender.lid) : false;
 
-            if (!isWhitelisted) {
+            if (!isWhitelistedById && !isWhitelistedByLid) {
                 return '*Access denied.* AI command is only available for whitelisted users.';
             }
         }
 
-        // Get user's assigned model
-        const userModel = await whitelistManager.getModel(message.sender.id);
+        // Get user's assigned model (try lid first since @mentions use lid, fallback to id)
+        let userModel = message.sender.lid ? await whitelistManager.getModel(message.sender.lid) : null;
+        if (!userModel || userModel === 'qwen3-coder-next') {
+            userModel = await whitelistManager.getModel(message.sender.id);
+        }
         console.log(`[AI] User model: ${userModel}`);
 
         // Build prompt from quoted message + user's message

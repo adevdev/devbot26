@@ -113,9 +113,11 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     try {
         // Check whitelist first
         const whitelistManager = require('./whitelistManager');
-        const isWhitelisted = await whitelistManager.isWhitelisted(message.sender.id);
+        // ponytail: check both id and lid since @mentions use lid
+        const isWhitelistedById = await whitelistManager.isWhitelisted(message.sender.id);
+        const isWhitelistedByLid = message.sender.lid ? await whitelistManager.isWhitelisted(message.sender.lid) : false;
 
-        if (!isWhitelisted) {
+        if (!isWhitelistedById && !isWhitelistedByLid) {
             // Silently ignore unknown commands from non-whitelisted users
             // Don't reveal AI feature existence
             return;
@@ -222,7 +224,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     }
 
     if (message.sender.id !== OWNER_ID) {
-        await message.reply('*Access denied.* Shell commands are owner-only.');
+        // Silent ignore for non-owners
         return;
     }
 
@@ -308,7 +310,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     }
 
     if (message.sender.id !== OWNER_ID) {
-        await message.reply('*Access denied.* Eval commands are owner-only.');
+        // Silent ignore for non-owners
         return;
     }
 
