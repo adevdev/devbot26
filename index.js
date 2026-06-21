@@ -472,7 +472,7 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
 });
 
 // Event: bot ready
-wachan.onReady(() => {
+wachan.onReady(async () => {
     console.log('Ready!');
     dashboard.setStatus('connected');
 
@@ -494,6 +494,10 @@ wachan.onReady(() => {
     console.log('Command prefix:', prefixes.join(', '));
 
     console.log('[EPHEMERAL] Auto 1-year ephemeral enabled');
+
+    // Sync whitelist from MongoDB on startup
+    const whitelistManager = require('./whitelistManager');
+    await whitelistManager.syncFromMongoDB();
 });
 
 // Event: connected
