@@ -137,7 +137,7 @@ module.exports = {
 3. Login with credentials from `.env`
 4. Enter phone number (with country code, no symbols)
 5. Link device:
-   - **QR Code**: Scan in WhatsApp > Linked Devices
+   - **QR Code**: Coming soon
    - **Pairing Code**: Enter 8-digit code in WhatsApp
 
 After first auth, credentials saved in `./wachan/state/creds.json` - no phone number needed on restart.
@@ -302,6 +302,25 @@ module.exports = {
 ```
 
 Commands auto-loaded from `./commands/` folder.
+
+## Technical Implementation Notes
+
+### Direct Baileys Usage
+
+Some features bypass Wachan and use Baileys directly for advanced functionality:
+
+**AI Image Search** (`commands/ai.js`)
+- Image responses sent via `sock.sendMessage()` directly
+- Reason: Wachan doesn't support `jpegThumbnail` field
+- Thumbnails generated with Jimp (5% of original size)
+- Prevents Baileys from auto-generating thumbnails with Sharp (which causes crashes on some platforms)
+
+**Auto Ephemeral Messages** (`index.js`)
+- Wraps `botSocket.sendMessage()` to inject `ephemeralExpiration: 31536000` (1 year)
+- All outgoing messages automatically set to expire after 1 year
+- Direct Baileys socket manipulation
+
+These implementations ensure compatibility across different deployment platforms (local, Render, etc.) while maintaining full functionality.
 
 ## Notes
 
