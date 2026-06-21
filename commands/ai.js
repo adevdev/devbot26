@@ -229,6 +229,8 @@ CRITICAL INSTRUCTIONS:
 - For ANY query about current events, prices, holidays, schedules, news, weather, or time-sensitive information, you MUST use the web_search tool.
 - For queries about "today", "this month", "this year", or specific future dates, ALWAYS use web_search first.
 - Use the get_time tool if you need detailed timestamp information (unix time, ISO format, timezone, etc).
+- When user asks for images/pictures/photos, ONLY use image_search tool. DO NOT use web_search for image requests.
+- The image_search tool returns Pinterest image URLs - use it for any visual content request.
 - Do NOT rely on your training data for time-sensitive information - always search the web first.
 
 Format your responses for WhatsApp:
@@ -284,6 +286,20 @@ Market cap: ~$1.28 trillion USD`;
                 properties: {},
                 required: []
             }
+        },
+        {
+            name: 'image_search',
+            description: 'Search for images on Pinterest and returns high-quality image URLs. Use this tool EXCLUSIVELY when user asks for pictures, images, photos, or any visual content. Do NOT use web_search for image requests - this tool provides everything needed.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    query: {
+                        type: 'string',
+                        description: 'The image search query (e.g., "cute cat", "sunset beach", "modern architecture")'
+                    }
+                },
+                required: ['query']
+            }
         }
     ];
 
@@ -302,6 +318,7 @@ Market cap: ~$1.28 trillion USD`;
 
         // Execute all tools
         const toolResults = [];
+        let imageSearchResult = null; // Track if image_search was used
 
         for (const toolUse of toolUses) {
             let toolResult;
@@ -313,6 +330,42 @@ Market cap: ~$1.28 trillion USD`;
             } else if (toolUse.name === 'get_time') {
                 console.log('[AI] Getting current time');
                 toolResult = getCurrentTime();
+            } else if (toolUse.name === 'image_search') {
+                console.log('[AI] Searching images:', toolUse.input.query);
+                try {
+                    // Call Pinterest API endpoint
+                    const apiUrl = `https://apied26.adevdev.com/pinterest?q=${encodeURIComponent(toolUse.input.query)}`;
+                    const apiResponse = await fetch(apiUrl);
+                    const apiData = await apiResponse.json();
+
+                    if (apiData.success && apiData.images && apiData.images.length > 0) {
+                        // Download first image
+                        console.log('[AI] Downloading image:', apiData.images[0]);
+                        const axios = require('axios');
+                        const imageResponse = await axios.get(apiData.images[0], { responseType: 'arraybuffer' });
+                        const imageBuffer = Buffer.from(imageResponse.data);
+
+                        // Store for immediate return (no caption, just image)
+                        imageSearchResult = {
+                            image: imageBuffer,
+                            text: ''
+                        };
+
+                        // Don't continue with other tools
+                        break;
+                    } else {
+                        toolResult = JSON.stringify({
+                            error: apiData.error || 'No images found',
+                            query: toolUse.input.query
+                        });
+                    }
+                } catch (error) {
+                    console.error('[AI] Image search failed:', error.message);
+                    toolResult = JSON.stringify({
+                        error: error.message,
+                        query: toolUse.input.query
+                    });
+                }
             }
 
             if (toolResult) {
@@ -322,6 +375,11 @@ Market cap: ~$1.28 trillion USD`;
                     content: toolResult
                 });
             }
+        }
+
+        // If image was found, return immediately
+        if (imageSearchResult) {
+            return imageSearchResult;
         }
 
         if (toolResults.length === 0) break;
@@ -344,7 +402,47 @@ Market cap: ~$1.28 trillion USD`;
 
     // Extract final text response
     const textContent = response.content.find(block => block.type === 'text');
-    return textContent ? textContent.text.trim() : 'No response generated.';
+    const finalText = textContent ? textContent.text.trim() : 'No response generated.';
+
+    // Check if image_search was used in this conversation
+    let imageUrls = [];
+    for (const msg of messages) {
+        if (msg.role === 'user' && Array.isArray(msg.content)) {
+            for (const item of msg.content) {
+                if (item.type === 'tool_result' && item.content) {
+                    try {
+                        const parsed = JSON.parse(item.content);
+                        if (parsed.images && Array.isArray(parsed.images)) {
+                            imageUrls.push(...parsed.images);
+                        }
+                    } catch (e) {
+                        // Not JSON or no images, skip
+                    }
+                }
+            }
+        }
+    }
+
+    // If images found, download first image and send with caption
+    if (imageUrls.length > 0) {
+        try {
+            console.log('[AI] Downloading image:', imageUrls[0]);
+            const axios = require('axios');
+            const imageResponse = await axios.get(imageUrls[0], { responseType: 'arraybuffer' });
+            const imageBuffer = Buffer.from(imageResponse.data);
+
+            return {
+                image: imageBuffer,
+                text: finalText + `\n\n_Image from Pinterest_`
+            };
+        } catch (error) {
+            console.error('[AI] Failed to download image:', error.message);
+            // Fallback to text only
+            return finalText + `\n\n_Image unavailable: ${error.message}_`;
+        }
+    }
+
+    return finalText;
 }
 
 // Call AI API (supports OpenAI and Anthropic)
