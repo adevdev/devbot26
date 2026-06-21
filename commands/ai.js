@@ -346,8 +346,10 @@ Market cap: ~$1.28 trillion USD`;
                         const imageBuffer = Buffer.from(imageResponse.data);
 
                         // Store for immediate return (no caption, just image)
+                        // jpegThumbnail: skip auto-generation to prevent sharp crash on Render
                         imageSearchResult = {
                             image: imageBuffer,
+                            jpegThumbnail: Buffer.alloc(0),
                             text: ''
                         };
 
@@ -433,6 +435,7 @@ Market cap: ~$1.28 trillion USD`;
 
             return {
                 image: imageBuffer,
+                jpegThumbnail: Buffer.alloc(0),
                 text: finalText + `\n\n_Image from Pinterest_`
             };
         } catch (error) {
