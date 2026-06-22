@@ -3,6 +3,29 @@ const { startContinuousTyping } = require('../utils/typing');
 const https = require('https');
 const { Jimp } = require('jimp');
 
+
+// ============================================
+// AI API Configuration - Edit these variables
+// ============================================
+
+// Model-to-Provider mapping
+const MODEL_PROVIDERS = {
+    // Anthropic-compatible models (all models use anthropic format)
+    'qwen3-coder-next': 'anthropic',
+    'claude-sonnet-4.5': 'anthropic'
+};
+
+// OpenAI Configuration
+const OPENAI_ENDPOINT = 'ai2.adevdev.com';
+const OPENAI_PATH = '/v1/chat/completions';
+
+// Anthropic Configuration
+const ANTHROPIC_ENDPOINT = 'ai2.adevdev.com';
+const ANTHROPIC_PATH = '/v1/messages';
+const ANTHROPIC_VERSION = '2023-06-01'; // Check docs for latest version
+// ============================================
+
+
 // Generate 5% thumbnail to prevent baileys auto-generation (sharp crash on Render)
 async function generateThumbnail(imageBuffer) {
     try {
@@ -20,23 +43,6 @@ async function generateThumbnail(imageBuffer) {
         return null;
     }
 }
-
-// ============================================
-// AI API Configuration - Edit these variables
-// ============================================
-const AI_PROVIDER = 'anthropic'; // 'openai' or 'anthropic'
-
-// OpenAI Configuration
-const OPENAI_ENDPOINT = 'ai2.adevdev.com';
-const OPENAI_PATH = '/v1/chat/completions';
-const OPENAI_MODEL = 'claude-sonnet-4.5';
-
-// Anthropic Configuration
-const ANTHROPIC_ENDPOINT = 'ai2.adevdev.com';
-const ANTHROPIC_PATH = '/v1/messages';
-const ANTHROPIC_MODEL = 'claude-sonnet-4.5'; // or 'claude-3-5-sonnet-20241022'
-const ANTHROPIC_VERSION = '2023-06-01'; // Check docs for latest version
-// ============================================
 
 module.exports = {
     response: async (context, next) => {
@@ -76,6 +82,13 @@ module.exports = {
         if (!imageBuffer && message.isMedia && message.type === 'image') {
             imageBuffer = await message.downloadMedia();
             imageType = message.mimetype || 'image/jpeg';
+        }
+
+        // Auto-switch to Claude for vision if user's model doesn't support it
+        const VISION_CAPABLE_MODELS = ['claude-sonnet-4.5']; // Add more models here as you test them
+        if (imageBuffer && !VISION_CAPABLE_MODELS.includes(userModel)) {
+            console.log(`[AI] Image detected, auto-switching from ${userModel} to claude-sonnet-4.5 for vision`);
+            userModel = 'claude-sonnet-4.5';
         }
 
         if (quotedMsg && quotedMsg.text) {
@@ -308,14 +321,43 @@ CRITICAL INSTRUCTIONS:
 - The image_search tool returns Pinterest image URLs - use it for any visual content request.
 - Do NOT rely on your training data for time-sensitive information - always search the web first.
 
-Format your responses for WhatsApp:
-- Use *bold* for emphasis on important info
-- Use _italic_ for less important details
-- Use • for bullet points
+WhatsApp Formatting Rules (IMPORTANT):
+- Bold: *text* (asterisks with NO spaces after opening or before closing)
+  ✓ Good: *Bitcoin Price* or *Price:* $50k
+  ✗ Bad: * Bitcoin Price * or *compiled knowledge*
+- Italic: _text_ (underscores with NO spaces)
+  ✓ Good: _Source: CoinDesk_
+  ✗ Bad: _ italic text _
+- Monospace: \`text\` (backticks for code/commands)
+  ✓ Good: \`/capture <url>\`
+- DO NOT use asterisks in the middle of sentences for emphasis - WhatsApp may not render them correctly
+- Put bold/italic formatting at the START of lines or after line breaks for best results
+- Use emojis for visual breaks: 💰 📊 📈 ⚡ 🔍 ✅ ❌
 - Keep responses concise and mobile-friendly
-- Use emojis where appropriate (💰 for money, 📊 for stats, 📈 for trends, etc.)
-- Break long text into short paragraphs
-- Use line breaks for readability
+- Use • or numbered lists for multiple items
+- Break long text into short paragraphs with empty lines between them
+
+Example GOOD formatting:
+*Bitcoin Price Today* 💰
+
+The current price is $63,850 USD
+
+📈 *24h Change:* +1.35%
+💵 *Market Cap:* $1.28 trillion
+
+_Last updated: ${currentTime}_
+
+Example BAD formatting (avoid):
+LLM builds/maintains your *compounding second brain* — not just retrieval, but *compiled knowledge*
+
+Instead write:
+LLM builds your compounding second brain
+
+*Key features:*
+• Not just retrieval
+• Compiled knowledge layer
+• Continuous learning
+
 
 Example good formatting:
 *Bitcoin Price Today:* 💰
@@ -664,9 +706,16 @@ Market cap: ~$1.28 trillion USD`;
 // Call AI API (supports OpenAI and Anthropic)
 function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
     return new Promise((resolve, reject) => {
+        // Determine provider from model
+        const provider = MODEL_PROVIDERS[model];
+        if (!provider) {
+            reject(new Error(`Unknown model: ${model}. Please add it to MODEL_PROVIDERS mapping.`));
+            return;
+        }
+
         let endpoint, path, payload, headers;
 
-        if (AI_PROVIDER === 'openai') {
+        if (provider === 'openai') {
             // OpenAI API format - system prompt as first message
             endpoint = OPENAI_ENDPOINT;
             path = OPENAI_PATH;
@@ -678,7 +727,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
             ];
 
             const payloadObj = {
-                model: model, // Use dynamic model
+                model: model,
                 messages: messagesWithSystem
             };
 
@@ -700,13 +749,13 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Length': Buffer.byteLength(payload)
             };
-        } else if (AI_PROVIDER === 'anthropic') {
+        } else if (provider === 'anthropic') {
             // Anthropic API format - system as separate field
             endpoint = ANTHROPIC_ENDPOINT;
             path = ANTHROPIC_PATH;
 
             const payloadObj = {
-                model: model, // Use dynamic model
+                model: model,
                 max_tokens: 2048,
                 system: systemPrompt, // System prompt as separate field
                 messages: messages
@@ -725,7 +774,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
                 'Content-Length': Buffer.byteLength(payload)
             };
         } else {
-            reject(new Error(`Unsupported AI provider: ${AI_PROVIDER}`));
+            reject(new Error(`Unsupported provider: ${provider}`));
             return;
         }
 
@@ -753,7 +802,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
                     const parsed = JSON.parse(data);
 
                     // Return full response object for tool calling support
-                    if (AI_PROVIDER === 'openai') {
+                    if (provider === 'openai') {
                         if (parsed.choices && parsed.choices[0]) {
                             resolve({
                                 content: [{ type: 'text', text: parsed.choices[0].message.content }],
@@ -762,7 +811,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
                         } else {
                             reject(new Error('Unexpected OpenAI API response format'));
                         }
-                    } else if (AI_PROVIDER === 'anthropic') {
+                    } else if (provider === 'anthropic') {
                         // Anthropic already returns in the right format
                         resolve(parsed);
                     }
