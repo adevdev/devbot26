@@ -6,6 +6,7 @@ const session = require('express-session');
 const bcrypt = require('bcrypt');
 const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
+const memoryManager = require('./memoryManager');
 require('dotenv').config();
 
 class BotDashboard {
@@ -534,6 +535,56 @@ class BotDashboard {
                 }
             } catch (error) {
                 this.addLog('error', `Failed to remove command: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // ===== MEMORY MANAGEMENT ENDPOINTS =====
+
+        // API: Get all rooms with memory
+        this.app.get('/api/memory', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const rooms = await memoryManager.getAllRooms();
+                res.json({ success: true, rooms });
+            } catch (error) {
+                this.addLog('error', `Failed to get memory rooms: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get memory details for a specific room
+        this.app.get('/api/memory/:roomId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { roomId } = req.params;
+                const messages = await memoryManager.loadMemory(roomId);
+                const stats = await memoryManager.getMemoryStats(roomId);
+
+                res.json({
+                    success: true,
+                    roomId,
+                    messages,
+                    stats
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get memory for ${req.params.roomId}: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Clear memory for a specific room
+        this.app.delete('/api/memory/:roomId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { roomId } = req.params;
+                const cleared = await memoryManager.clearMemory(roomId);
+
+                if (cleared) {
+                    this.addLog('success', `Memory cleared for room: ${roomId}`);
+                    res.json({ success: true, message: `Memory cleared for ${roomId}` });
+                } else {
+                    res.status(500).json({ success: false, error: 'Failed to clear memory' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to clear memory for ${req.params.roomId}: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
             }
         });

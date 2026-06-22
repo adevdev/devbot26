@@ -2,6 +2,7 @@ const whitelistManager = require('../whitelistManager');
 const { startContinuousTyping } = require('../utils/typing');
 const https = require('https');
 const { Jimp } = require('jimp');
+const memoryManager = require('../memoryManager');
 
 
 // ============================================
@@ -131,7 +132,6 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            // Pass the incoming message so we can quote it in first progress
             const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType, message);
 
             stopTyping();
@@ -291,6 +291,15 @@ function getCurrentTime() {
 
 // Call AI API with tool support (multi-turn)
 async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
+    // Load recent conversation memory for context
+    let memoryContext = null;
+    try {
+        memoryContext = await memoryManager.getRecentContext(roomJid, 10);
+    } catch (error) {
+        console.error('[Memory] Failed to load context:', error.message);
+        // Continue without memory context
+    }
+
     // Get current date/time for context
     const now = new Date();
     const currentDate = now.toLocaleDateString('en-US', {
@@ -306,11 +315,18 @@ async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = 
     });
 
     // System prompt for WhatsApp formatting
-    const systemPrompt = `You are a helpful AI assistant responding via WhatsApp.
+    let systemPrompt = `You are a helpful AI assistant responding via WhatsApp.
 
 IMPORTANT CONTEXT:
 Current date: ${currentDate}
-Current time: ${currentTime}
+Current time: ${currentTime}`;
+
+    // Inject memory context if available
+    if (memoryContext) {
+        systemPrompt += `\n\n${memoryContext}\n\n---\n\nUse the conversation history above to maintain context and continuity in your responses.`;
+    }
+
+    systemPrompt += `
 
 CRITICAL INSTRUCTIONS:
 - Your training data has a knowledge cutoff date. The current date (${currentDate}) may be AFTER your training cutoff.
@@ -458,10 +474,17 @@ Market cap: ~$1.28 trillion USD`;
     ];
 
     // Tool calling loop (max iterations to prevent infinite loops)
-    let response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+    let response;
+    try {
+        response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+    } catch (error) {
+        console.error('[AI] API call failed:', error.message);
+        throw error;
+    }
+
     let iterations = 0;
-    const MAX_ITERATIONS = 10; // Increased from 5 to handle complex multi-step queries
-    let progressMsg = null; // Track progress message for editing
+    const MAX_ITERATIONS = 10;
+    let progressMsg = null;
 
     while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -697,10 +720,38 @@ Market cap: ~$1.28 trillion USD`;
     // Send final text - edit progress message if exists, otherwise return to wachan
     if (progressMsg) {
         await progressMsg.edit(finalText);
+
+        // Save to memory after successful response
+        await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
+
         return null; // Already sent via edit
     }
 
+    // Save to memory before returning
+    await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
+
     return finalText;
+}
+
+// Helper function to save conversation to memory
+async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage, imageBuffer) {
+    try {
+        // Save user message
+        const userMetadata = {
+            sender: userMessage?.sender?.id || 'unknown',
+            hasImage: !!imageBuffer
+        };
+        await memoryManager.saveMessage(roomJid, 'user', userPrompt, userMetadata);
+
+        // Save assistant response
+        const assistantMetadata = {
+            model: model
+        };
+        await memoryManager.saveMessage(roomJid, 'assistant', aiResponse, assistantMetadata);
+    } catch (error) {
+        console.error('[AI] Failed to save to memory:', error.message);
+        // Don't throw - memory failure shouldn't break the response
+    }
 }
 
 // Call AI API (supports OpenAI and Anthropic)
@@ -708,6 +759,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
     return new Promise((resolve, reject) => {
         // Determine provider from model
         const provider = MODEL_PROVIDERS[model];
+
         if (!provider) {
             reject(new Error(`Unknown model: ${model}. Please add it to MODEL_PROVIDERS mapping.`));
             return;
@@ -796,6 +848,11 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
                 try {
                     if (res.statusCode !== 200) {
                         reject(new Error(`API returned status ${res.statusCode}: ${data}`));
+                        return;
+                    }
+
+                    if (!data || data.trim().length === 0) {
+                        reject(new Error('API returned empty response'));
                         return;
                     }
 

@@ -7,3 +7,4 @@ data/*
 public/dashboard.min.js
 public/dashboard.min.html
 .claude
+memory/*
