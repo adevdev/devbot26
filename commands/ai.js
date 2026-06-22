@@ -419,7 +419,7 @@ Market cap: ~$1.28 trillion USD`;
     let response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
     let iterations = 0;
     const MAX_ITERATIONS = 10; // Increased from 5 to handle complex multi-step queries
-    let lastProgressMsg = null; // Track last progress message for quoting
+    let progressMsg = null; // Track progress message for editing
 
     while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -444,22 +444,19 @@ Market cap: ~$1.28 trillion USD`;
 
         if (progressText) {
             const bot = require('wachan');
-            const sock = bot.getSocket();
 
-            // First progress quotes user message, subsequent ones quote previous progress
-            let progressMsgOptions = {};
-
-            if (lastProgressMsg) {
-                // Quote previous progress (safe - our own message)
-                progressMsgOptions = { quoted: lastProgressMsg };
-            } else if (userMessage) {
-                // Quote user message using baileys format
-                // userMessage is a wachan Message object, use .toBaileys() to get proper structure
-                progressMsgOptions = { quoted: userMessage.toBaileys() };
+            if (!progressMsg) {
+                // First progress - send new message (quote user message)
+                const options = { text: progressText };
+                if (userMessage) {
+                    // Pass wachan Message object directly, wachan will call .toBaileys() internally
+                    options.quoted = userMessage;
+                }
+                progressMsg = await bot.sendMessage(roomJid, options);
+            } else {
+                // Subsequent progress - edit the existing message
+                await progressMsg.edit(progressText);
             }
-
-            const sentMsg = await sock.sendMessage(roomJid, { text: progressText }, progressMsgOptions);
-            lastProgressMsg = sentMsg; // Store for next quote
         }
 
         // Execute all tools
@@ -506,8 +503,8 @@ Market cap: ~$1.28 trillion USD`;
                             image: imageBuffer,
                             jpegThumbnail: thumbnail
                         };
-                        if (lastProgressMsg) {
-                            imageOptions.quoted = lastProgressMsg;
+                        if (progressMsg) {
+                            imageOptions.quoted = progressMsg.toBaileys();
                         }
 
                         await sock.sendMessage(roomJid, imageOptions);
@@ -632,8 +629,8 @@ Market cap: ~$1.28 trillion USD`;
             };
 
             // Quote last progress message if exists
-            if (lastProgressMsg) {
-                imageOptions.quoted = lastProgressMsg;
+            if (progressMsg) {
+                imageOptions.quoted = progressMsg.toBaileys();
             }
 
             await sock.sendMessage(roomJid, imageOptions);
@@ -643,24 +640,22 @@ Market cap: ~$1.28 trillion USD`;
         } catch (error) {
             console.error('[AI] Failed to download image:', error.message);
             // Fallback to text only with quote
-            if (lastProgressMsg) {
+            if (progressMsg) {
                 const bot = require('wachan');
                 const sock = bot.getSocket();
                 await sock.sendMessage(roomJid, {
                     text: finalText + `\n\n_Image unavailable: ${error.message}_`
-                }, { quoted: lastProgressMsg });
+                }, { quoted: progressMsg.toBaileys() });
                 return null;
             }
             return finalText + `\n\n_Image unavailable: ${error.message}_`;
         }
     }
 
-    // Send final text with quoted progress message if exists
-    if (lastProgressMsg) {
-        const bot = require('wachan');
-        const sock = bot.getSocket();
-        await sock.sendMessage(roomJid, { text: finalText }, { quoted: lastProgressMsg });
-        return null; // Already sent
+    // Send final text - edit progress message if exists, otherwise return to wachan
+    if (progressMsg) {
+        await progressMsg.edit(finalText);
+        return null; // Already sent via edit
     }
 
     return finalText;
