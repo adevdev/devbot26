@@ -118,7 +118,8 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType);
+            // Pass the incoming message so we can quote it in first progress
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType, message);
 
             stopTyping();
             return response;
@@ -136,6 +137,42 @@ module.exports = {
         fallback: true // Mark this as fallback command
     }
 };
+
+// Fetch URL content
+async function fetchUrl(url) {
+    try {
+        console.log('[FetchURL] Fetching:', url);
+        const response = await fetch(url, {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            },
+            signal: AbortSignal.timeout(15000) // 15s timeout
+        });
+
+        if (!response.ok) {
+            return JSON.stringify({
+                error: `HTTP ${response.status}`,
+                url: url
+            });
+        }
+
+        const text = await response.text();
+
+        // Limit response size (max 50KB)
+        const MAX_SIZE = 50000;
+        const trimmed = text.length > MAX_SIZE ? text.slice(0, MAX_SIZE) + '\n... (truncated)' : text;
+
+        console.log('[FetchURL] Fetched', trimmed.length, 'bytes');
+        return trimmed;
+
+    } catch (error) {
+        console.error('[FetchURL] Error:', error.message);
+        return JSON.stringify({
+            error: error.message,
+            url: url
+        });
+    }
+}
 
 // Web search tool using EXA MCP endpoint (free, no API key)
 async function webSearch(query) {
@@ -240,7 +277,7 @@ function getCurrentTime() {
 }
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null) {
+async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
     // Get current date/time for context
     const now = new Date();
     const currentDate = now.toLocaleDateString('en-US', {
@@ -340,6 +377,20 @@ Market cap: ~$1.28 trillion USD`;
             }
         },
         {
+            name: 'fetch_url',
+            description: 'Fetch and read the content from a URL. Use this to access specific web pages, GitHub files, documentation, articles, or any URL content.',
+            input_schema: {
+                type: 'object',
+                properties: {
+                    url: {
+                        type: 'string',
+                        description: 'The URL to fetch (must include http:// or https://)'
+                    }
+                },
+                required: ['url']
+            }
+        },
+        {
             name: 'get_time',
             description: 'Get current date and time in multiple formats. Use when user asks about current time, date, day of week, or needs timestamp.',
             input_schema: {
@@ -364,10 +415,11 @@ Market cap: ~$1.28 trillion USD`;
         }
     ];
 
-    // Tool calling loop (max 5 rounds to prevent infinite loops)
+    // Tool calling loop (max iterations to prevent infinite loops)
     let response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
     let iterations = 0;
-    const MAX_ITERATIONS = 5;
+    const MAX_ITERATIONS = 10; // Increased from 5 to handle complex multi-step queries
+    let lastProgressMsg = null; // Track last progress message for quoting
 
     while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
         iterations++;
@@ -376,6 +428,39 @@ Market cap: ~$1.28 trillion USD`;
         const toolUses = response.content.filter(block => block.type === 'tool_use');
 
         if (toolUses.length === 0) break;
+
+        // Send progress message for first tool
+        const firstTool = toolUses[0];
+        let progressText = '';
+        if (firstTool.name === 'web_search') {
+            progressText = `🔍 Using web search: _${firstTool.input.query}_`;
+        } else if (firstTool.name === 'fetch_url') {
+            progressText = `📄 Fetching URL: _${firstTool.input.url}_`;
+        } else if (firstTool.name === 'get_time') {
+            progressText = `🕐 Getting current time...`;
+        } else if (firstTool.name === 'image_search') {
+            progressText = `🖼️ Searching images: _${firstTool.input.query}_`;
+        }
+
+        if (progressText) {
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            // First progress quotes user message, subsequent ones quote previous progress
+            let progressMsgOptions = {};
+
+            if (lastProgressMsg) {
+                // Quote previous progress (safe - our own message)
+                progressMsgOptions = { quoted: lastProgressMsg };
+            } else if (userMessage) {
+                // Quote user message using baileys format
+                // userMessage is a wachan Message object, use .toBaileys() to get proper structure
+                progressMsgOptions = { quoted: userMessage.toBaileys() };
+            }
+
+            const sentMsg = await sock.sendMessage(roomJid, { text: progressText }, progressMsgOptions);
+            lastProgressMsg = sentMsg; // Store for next quote
+        }
 
         // Execute all tools
         const toolResults = [];
@@ -388,6 +473,9 @@ Market cap: ~$1.28 trillion USD`;
             if (toolUse.name === 'web_search') {
                 console.log('[AI] Using web search:', toolUse.input.query);
                 toolResult = await webSearch(toolUse.input.query);
+            } else if (toolUse.name === 'fetch_url') {
+                console.log('[AI] Fetching URL:', toolUse.input.url);
+                toolResult = await fetchUrl(toolUse.input.url);
             } else if (toolUse.name === 'get_time') {
                 console.log('[AI] Getting current time');
                 toolResult = getCurrentTime();
@@ -412,10 +500,17 @@ Market cap: ~$1.28 trillion USD`;
                         // Send directly via baileys to include jpegThumbnail (wachan doesn't support it)
                         const bot = require('wachan');
                         const sock = bot.getSocket();
-                        await sock.sendMessage(roomJid, {
+
+                        // Send with quoted progress message
+                        const imageOptions = {
                             image: imageBuffer,
                             jpegThumbnail: thumbnail
-                        });
+                        };
+                        if (lastProgressMsg) {
+                            imageOptions.quoted = lastProgressMsg;
+                        }
+
+                        await sock.sendMessage(roomJid, imageOptions);
 
                         // Return null to prevent wachan from sending again
                         imageSearchResult = { handled: true };
@@ -469,6 +564,29 @@ Market cap: ~$1.28 trillion USD`;
         response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
     }
 
+    // If we hit max iterations while AI still wants to use tools, force final response
+    if (iterations >= MAX_ITERATIONS && response.stop_reason === 'tool_use') {
+        console.log('[AI] Max iterations reached, forcing final response');
+
+        // Add assistant message with last tool use
+        messages.push({
+            role: 'assistant',
+            content: response.content
+        });
+
+        // Add a user message asking for final answer based on gathered info
+        messages.push({
+            role: 'user',
+            content: [{
+                type: 'text',
+                text: 'You have reached the maximum number of tool uses. Please provide your final answer based on the information you have gathered so far.'
+            }]
+        });
+
+        // Get final response without tools
+        response = await callAIAPI(messages, [], systemPrompt, model, apiKey);
+    }
+
     // Extract final text response
     const textContent = response.content.find(block => block.type === 'text');
     const finalText = textContent ? textContent.text.trim() : 'No response generated.';
@@ -506,19 +624,43 @@ Market cap: ~$1.28 trillion USD`;
             // Send directly via baileys to include jpegThumbnail (wachan doesn't support it)
             const bot = require('wachan');
             const sock = bot.getSocket();
-            await sock.sendMessage(roomJid, {
+
+            const imageOptions = {
                 image: imageBuffer,
                 jpegThumbnail: thumbnail,
                 caption: finalText + `\n\n_Image from Pinterest_`
-            });
+            };
+
+            // Quote last progress message if exists
+            if (lastProgressMsg) {
+                imageOptions.quoted = lastProgressMsg;
+            }
+
+            await sock.sendMessage(roomJid, imageOptions);
 
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
             console.error('[AI] Failed to download image:', error.message);
-            // Fallback to text only
+            // Fallback to text only with quote
+            if (lastProgressMsg) {
+                const bot = require('wachan');
+                const sock = bot.getSocket();
+                await sock.sendMessage(roomJid, {
+                    text: finalText + `\n\n_Image unavailable: ${error.message}_`
+                }, { quoted: lastProgressMsg });
+                return null;
+            }
             return finalText + `\n\n_Image unavailable: ${error.message}_`;
         }
+    }
+
+    // Send final text with quoted progress message if exists
+    if (lastProgressMsg) {
+        const bot = require('wachan');
+        const sock = bot.getSocket();
+        await sock.sendMessage(roomJid, { text: finalText }, { quoted: lastProgressMsg });
+        return null; // Already sent
     }
 
     return finalText;
