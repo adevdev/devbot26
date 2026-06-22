@@ -91,6 +91,22 @@ class BotDashboard {
             res.status(401).json({ error: 'Unauthorized' });
         }
     }
+
+    // API Key middleware
+    requireApiKey(req, res, next) {
+        const apiKey = req.headers['x-api-key'];
+        const validKey = process.env.BOT_API_SECRET;
+
+        if (!validKey) {
+            return res.status(500).json({ success: false, error: 'API key not configured' });
+        }
+
+        if (apiKey === validKey) {
+            next();
+        } else {
+            res.status(401).json({ success: false, error: 'Invalid API key' });
+        }
+    }
     
     setupRoutes() {
         // Main dashboard - serve minified HTML in production
@@ -178,6 +194,112 @@ class BotDashboard {
         // Check auth status
         this.app.get('/api/auth-status', (req, res) => {
             res.json({ authenticated: req.session && req.session.authenticated === true });
+        });
+
+        // API: Send message (requires API key)
+        this.app.post('/api/send-message', this.requireApiKey.bind(this), async (req, res) => {
+            try {
+                const { to, message } = req.body;
+
+                // Validate input
+                if (!to || !message) {
+                    return res.status(400).json({ success: false, error: 'Missing required fields: to, message' });
+                }
+
+                if (typeof to !== 'string' || typeof message !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Invalid field types' });
+                }
+
+                // Check bot status
+                if (this.botStatus !== 'connected') {
+                    return res.status(503).json({ success: false, error: 'Bot not connected' });
+                }
+
+                // Get bot socket from wachan
+                const wachan = require('wachan');
+                const socket = wachan.getSocket();
+
+                if (!socket) {
+                    return res.status(503).json({ success: false, error: 'Bot socket not available' });
+                }
+
+                // Normalize target (add @s.whatsapp.net if not present)
+                let target = to.trim();
+                if (!/[@]/.test(target)) {
+                    target = `${target}@s.whatsapp.net`;
+                }
+
+                // Send message
+                await socket.sendMessage(target, { text: message });
+
+                this.addLog('info', `[API] Message sent to ${target}`);
+                res.json({ success: true, message: 'Message sent successfully', to: target });
+
+            } catch (error) {
+                this.addLog('error', `[API] Send message failed: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Wait for reply (requires API key)
+        this.app.post('/api/wait-for-reply', this.requireApiKey.bind(this), async (req, res) => {
+            try {
+                const { from, timeout = 60000 } = req.body;
+
+                // Validate input
+                if (!from) {
+                    return res.status(400).json({ success: false, error: 'Missing required field: from' });
+                }
+
+                if (typeof from !== 'string') {
+                    return res.status(400).json({ success: false, error: 'Invalid field type for from' });
+                }
+
+                // Validate timeout
+                const timeoutMs = parseInt(timeout);
+                if (isNaN(timeoutMs) || timeoutMs < 1000 || timeoutMs > 300000) {
+                    return res.status(400).json({ success: false, error: 'Timeout must be between 1000 and 300000 ms' });
+                }
+
+                // Check bot status
+                if (this.botStatus !== 'connected') {
+                    return res.status(503).json({ success: false, error: 'Bot not connected' });
+                }
+
+                // Normalize sender (add @s.whatsapp.net if not present)
+                let sender = from.trim();
+                if (!/[@]/.test(sender)) {
+                    sender = `${sender}@s.whatsapp.net`;
+                }
+
+                this.addLog('info', `[API] Waiting for reply from ${sender} (timeout: ${timeoutMs}ms)`);
+
+                // Wait for message
+                const wachan = require('wachan');
+                const reply = await this.waitForMessageFrom(sender, timeoutMs, wachan);
+
+                this.addLog('info', `[API] Reply received from ${sender}`);
+                res.json({
+                    success: true,
+                    message: 'Reply received',
+                    from: sender,
+                    reply: {
+                        text: reply.text || null,
+                        hasMedia: !!reply.media,
+                        mediaType: reply.media?.type || null,
+                        timestamp: reply.timestamp
+                    }
+                });
+
+            } catch (error) {
+                if (error.message === 'TIMEOUT') {
+                    this.addLog('info', `[API] Wait for reply timeout`);
+                    return res.status(408).json({ success: false, error: 'Timeout waiting for reply' });
+                }
+
+                this.addLog('error', `[API] Wait for reply failed: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
         });
 
         // Protected API endpoints
@@ -686,6 +808,46 @@ class BotDashboard {
         } catch (error) {
             throw new Error(`Eval error: ${error.message}`);
         }
+    }
+
+    // Wait for message from specific sender
+    waitForMessageFrom(sender, timeoutMs, wachan) {
+        return new Promise((resolve, reject) => {
+            let timeoutHandle;
+            let receiver;
+
+            // Cleanup function
+            const cleanup = () => {
+                if (timeoutHandle) clearTimeout(timeoutHandle);
+                if (receiver && typeof receiver.remove === 'function') {
+                    receiver.remove();
+                }
+            };
+
+            // Set timeout
+            timeoutHandle = setTimeout(() => {
+                cleanup();
+                reject(new Error('TIMEOUT'));
+            }, timeoutMs);
+
+            // Register message listener
+            receiver = wachan.onReceive(wachan.messageType.any, async (context, next) => {
+                const { message } = context;
+
+                // Check if message is from target sender
+                if (message.sender?.id === sender || message.from === sender) {
+                    cleanup();
+                    resolve({
+                        text: message.text || null,
+                        media: message.media || null,
+                        timestamp: new Date().toISOString()
+                    });
+                    return; // Don't call next - we consumed this
+                }
+
+                next(); // Pass to other handlers
+            });
+        });
     }
     
     start(port = 3000) {
