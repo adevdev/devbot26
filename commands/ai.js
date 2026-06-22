@@ -50,6 +50,11 @@ module.exports = {
         const { message, command } = context;
         const bot = require('wachan');
 
+        // Log to console (auto-piped to dashboard)
+        const userText = command.parameters.join(' ') || '(no text)';
+        const hasImage = message.isMedia && message.type === 'image';
+        console.log(`[AI] Command from ${message.sender.id}: ${hasImage ? '[IMAGE] ' : ''}${userText}`);
+
         // Check whitelist (skip if already checked by fallback handler)
         // ponytail: check both id and lid since @mentions use lid
         if (!command.skipWhitelistCheck) {
@@ -57,6 +62,7 @@ module.exports = {
             const isWhitelistedByLid = message.sender.lid ? await whitelistManager.isWhitelisted(message.sender.lid) : false;
 
             if (!isWhitelistedById && !isWhitelistedByLid) {
+                console.log(`[AI] Access denied for ${message.sender.id}`);
                 return '*Access denied.* AI command is only available for whitelisted users.';
             }
         }
@@ -132,9 +138,24 @@ module.exports = {
 
         try {
             // Call AI API with tool support
+            console.log(`[AI] Starting API call (model: ${userModel})`);
             const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType, message);
 
             stopTyping();
+
+            // null means already sent via baileys (tools were used)
+            if (response === null) {
+                console.log('[AI] Response already sent via baileys');
+                return null;
+            }
+
+            // Empty string/undefined is actual error
+            if (!response) {
+                console.log('[AI] Empty response from API');
+                return '*AI Error:* Empty response received';
+            }
+
+            console.log(`[AI] Response sent (${response.length} chars)`);
             return response;
 
         } catch (error) {
@@ -323,7 +344,7 @@ Current time: ${currentTime}`;
 
     // Inject memory context if available
     if (memoryContext) {
-        systemPrompt += `\n\n${memoryContext}\n\n---\n\nUse the conversation history above to maintain context and continuity in your responses.`;
+        systemPrompt += `\n\n${memoryContext}\n\n---\n\n**IMPORTANT:** Review the conversation history above FIRST before using any tools. If the user's question can be answered from recent context or follows up on a previous topic, use that information instead of searching the web again. Only use web_search for NEW queries about current events or information not in the conversation history.`;
     }
 
     systemPrompt += `
@@ -337,56 +358,98 @@ CRITICAL INSTRUCTIONS:
 - The image_search tool returns Pinterest image URLs - use it for any visual content request.
 - Do NOT rely on your training data for time-sensitive information - always search the web first.
 
-WhatsApp Formatting Rules (IMPORTANT):
-- Bold: *text* (asterisks with NO spaces after opening or before closing)
-  ✓ Good: *Bitcoin Price* or *Price:* $50k
-  ✗ Bad: * Bitcoin Price * or *compiled knowledge*
-- Italic: _text_ (underscores with NO spaces)
-  ✓ Good: _Source: CoinDesk_
-  ✗ Bad: _ italic text _
-- Monospace: \`text\` (backticks for code/commands)
-  ✓ Good: \`/capture <url>\`
-- DO NOT use asterisks in the middle of sentences for emphasis - WhatsApp may not render them correctly
-- Put bold/italic formatting at the START of lines or after line breaks for best results
-- Use emojis for visual breaks: 💰 📊 📈 ⚡ 🔍 ✅ ❌
-- Keep responses concise and mobile-friendly
-- Use • or numbered lists for multiple items
-- Break long text into short paragraphs with empty lines between them
+WhatsApp Formatting Rules (CRITICAL):
 
-Example GOOD formatting:
+**What NOT to use (will break on WhatsApp):**
+❌ NEVER use double asterisks **text** for bold - WhatsApp only supports single *text*
+❌ NEVER use markdown tables (| column | column |) - they render as plain text
+❌ NEVER use headers with ## or ### - not supported
+❌ NEVER use horizontal rules (---) - use emojis or line breaks instead
+❌ NEVER use code blocks with triple backticks (\`\`\`) - use single backtick for inline code only
+❌ NEVER create structured documentation-style responses with multiple sections
+
+**What TO use:**
+✅ Bold: *text* - SINGLE asterisk only, no spaces after opening or before closing
+   Example: *Bitcoin Price* or *Price:* $50k
+   WRONG: **Bitcoin Price** or ** Price: ** $50k
+✅ Italic: _text_ - single underscores with NO spaces
+   Example: _Source: CoinDesk_
+   WRONG: __Source: CoinDesk__
+✅ Monospace: \`text\` - single backticks for short code/commands only
+   Example: \`/capture <url>\`
+✅ Bullet points with • or - for lists
+✅ Numbered lists: 1. 2. 3.
+✅ Emojis for visual breaks: 💰 📊 📈 ⚡ 🔍 ✅ ❌
+✅ Short paragraphs with empty lines between them
+✅ Conversational, mobile-friendly tone
+
+**Formatting examples:**
+
+WRONG (double asterisks):
+• **Spot Rate:** Rp17.813 per USD
+• **Perubahan:** -9 poin
+
+RIGHT (single asterisks):
+• *Spot Rate:* Rp17.813 per USD
+• *Perubahan:* -9 poin
+
+WRONG (nested formatting in bullets):
+• *BCA:* Beli **Rp17.615** – Jual **Rp17.890**
+
+RIGHT (clean simple format):
+• *BCA:* Beli Rp17.615 – Jual Rp17.890
+
+**Comparison data formatting:**
+WRONG (markdown table):
+| Name | Value |
+|------|-------|
+| Bitcoin | $60k |
+
+RIGHT (simple list):
+*Bitcoin:* $60k
+*Ethereum:* $3.2k
+*Solana:* $120
+
+Or with bullets:
+• Bitcoin: $60k
+• Ethereum: $3.2k
+• Solana: $120
+
+**Multiple items with details:**
+WRONG (structured with headers):
+## Project A
+Description here
+## Project B
+Description here
+
+RIGHT (conversational):
+*Project A*
+Description here
+
+*Project B*
+Description here
+
+Or:
+1. *Project A* - Description here
+2. *Project B* - Description here
+
+Example GOOD response:
 *Bitcoin Price Today* 💰
 
-The current price is $63,850 USD
+Current price: $63,850 USD
 
 📈 *24h Change:* +1.35%
 💵 *Market Cap:* $1.28 trillion
 
 _Last updated: ${currentTime}_
 
-Example BAD formatting (avoid):
-LLM builds/maintains your *compounding second brain* — not just retrieval, but *compiled knowledge*
+Example BAD response (avoid):
+## Bitcoin Analysis
+| Metric | Value |
+|--------|-------|
+| Price | $63,850 |
 
-Instead write:
-LLM builds your compounding second brain
-
-*Key features:*
-• Not just retrieval
-• Compiled knowledge layer
-• Continuous learning
-
-
-Example good formatting:
-*Bitcoin Price Today:* 💰
-
-*$63,850 - $63,950 USD*
-
-📈 24h Change: *+1.1% to +1.35%*
-
-_Sources:_
-• CoinMarketCap: $63,880
-• CoinDesk: $63,899
-
-Market cap: ~$1.28 trillion USD`;
+Instead write conversationally for mobile.`;
 
     // Build first user message with optional image
     let firstMessageContent;
@@ -477,6 +540,7 @@ Market cap: ~$1.28 trillion USD`;
     let response;
     try {
         response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+        console.log(`[AI] Initial API response: stop_reason=${response.stop_reason}, content_blocks=${response.content?.length || 0}`);
     } catch (error) {
         console.error('[AI] API call failed:', error.message);
         throw error;
@@ -651,7 +715,14 @@ Market cap: ~$1.28 trillion USD`;
 
     // Extract final text response
     const textContent = response.content.find(block => block.type === 'text');
-    const finalText = textContent ? textContent.text.trim() : 'No response generated.';
+    let finalText = textContent ? textContent.text.trim() : 'No response generated.';
+
+    // Remove qwen-specific artifacts (internal tokens that leak into response)
+    finalText = finalText.replace(/^<RSPC>\s*/i, ''); // Remove <RSPC> prefix
+    finalText = finalText.replace(/^<\/RSPC>\s*/i, ''); // Remove </RSPC> if present
+
+    console.log(`[AI] Final text extracted: ${finalText.substring(0, 100)}...`);
+    console.log('[AI] Response content blocks:', JSON.stringify(response.content, null, 2));
 
     // Check if image_search was used in this conversation
     let imageUrls = [];
@@ -693,41 +764,81 @@ Market cap: ~$1.28 trillion USD`;
                 caption: finalText + `\n\n_Image from Pinterest_`
             };
 
-            // Quote last progress message if exists
-            if (progressMsg) {
-                imageOptions.quoted = progressMsg.toBaileys();
-            }
+            // Quote original user message (baileys format: third parameter)
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
 
-            await sock.sendMessage(roomJid, imageOptions);
+            await sock.sendMessage(roomJid, imageOptions, quotedOptions);
+
+            // Delete progress message if exists
+            if (progressMsg) {
+                try {
+                    await progressMsg.delete();
+                } catch (e) {
+                    console.error('[AI] Failed to delete progress message:', e.message);
+                }
+            }
 
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
             console.error('[AI] Failed to download image:', error.message);
-            // Fallback to text only with quote
+
+            // Fallback to text - send new message quoted to user, delete progress
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            const textOptions = {
+                text: finalText + `\n\n_Image unavailable: ${error.message}_`
+            };
+
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+            await sock.sendMessage(roomJid, textOptions, quotedOptions);
+
+            // Delete progress message if exists
             if (progressMsg) {
-                const bot = require('wachan');
-                const sock = bot.getSocket();
-                await sock.sendMessage(roomJid, {
-                    text: finalText + `\n\n_Image unavailable: ${error.message}_`
-                }, { quoted: progressMsg.toBaileys() });
-                return null;
+                try {
+                    await progressMsg.delete();
+                } catch (e) {
+                    console.error('[AI] Failed to delete progress message:', e.message);
+                }
             }
-            return finalText + `\n\n_Image unavailable: ${error.message}_`;
+
+            return null;
         }
     }
 
-    // Send final text - edit progress message if exists, otherwise return to wachan
+    // Send final text
     if (progressMsg) {
-        await progressMsg.edit(finalText);
+        // Send NEW message with final result (quoted to user)
+        console.log(`[AI] Sending final response (${finalText.length} chars), deleting progress msg`);
+
+        const bot = require('wachan');
+        const sock = bot.getSocket();
+
+        const textOptions = {
+            text: finalText
+        };
+
+        const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+        await sock.sendMessage(roomJid, textOptions, quotedOptions);
+
+        // Delete progress message
+        try {
+            await progressMsg.delete();
+        } catch (error) {
+            console.error('[AI] Failed to delete progress message:', error.message);
+        }
 
         // Save to memory after successful response
         await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
 
-        return null; // Already sent via edit
+        return null; // Already sent
     }
 
-    // Save to memory before returning
+    // No tools were used - save to memory before returning
+    console.log(`[AI] Returning direct response (${finalText.length} chars)`);
     await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
 
     return finalText;
