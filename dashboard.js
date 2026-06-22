@@ -431,27 +431,31 @@ class BotDashboard {
         // API: Add number to whitelist
         this.app.post('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { number, model } = req.body;
+                const { number, model, pushName } = req.body;
 
                 if (!number || typeof number !== 'string') {
                     return res.status(400).json({ success: false, error: 'Valid phone number is required' });
                 }
 
-                // Validate format (basic)
+                // Validate format (basic) - support both JID and LID
                 const sanitized = number.trim();
-                if (!/^\d+(@s\.whatsapp\.net)?$/.test(sanitized)) {
+                if (!/^\d+(@s\.whatsapp\.net|@lid)?$/.test(sanitized)) {
                     return res.status(400).json({ success: false, error: 'Invalid phone number format' });
                 }
 
                 // Validate model if provided
                 const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
-                const selectedModel = model && validModels.includes(model) ? model : 'claude-sonnet-4.5';
+                const selectedModel = model && validModels.includes(model) ? model : 'qwen3-coder-next';
+
+                // Validate pushName if provided
+                const sanitizedPushName = pushName && typeof pushName === 'string' ? pushName.trim() : null;
 
                 const whitelistManager = require('./whitelistManager');
-                const normalized = await whitelistManager.addNumber(sanitized, selectedModel);
+                const normalized = await whitelistManager.addNumber(sanitized, selectedModel, sanitizedPushName);
 
-                this.addLog('success', `Added ${normalized} to AI whitelist with model ${selectedModel}`);
-                res.json({ success: true, message: 'Number added to whitelist', number: normalized, model: selectedModel });
+                const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
+                this.addLog('success', `Added ${normalized}${logName} to AI whitelist with model ${selectedModel}`);
+                res.json({ success: true, message: 'Number added to whitelist', number: normalized, model: selectedModel, pushName: sanitizedPushName });
             } catch (error) {
                 this.addLog('error', `Failed to add to whitelist: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
@@ -462,7 +466,7 @@ class BotDashboard {
         this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { number } = req.params;
-                const { model, newNumber } = req.body;
+                const { model, newNumber, pushName } = req.body;
 
                 // Validate model
                 const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
@@ -479,28 +483,33 @@ class BotDashboard {
                     return res.status(404).json({ success: false, error: 'Number not found in whitelist' });
                 }
 
+                // Validate pushName if provided
+                const sanitizedPushName = pushName && typeof pushName === 'string' ? pushName.trim() : null;
+
                 // If number is being changed
                 if (newNumber && newNumber !== decodedOldNumber) {
                     // Validate new number format
                     const sanitized = newNumber.trim();
-                    if (!/^\d+(@s\.whatsapp\.net)?$/.test(sanitized)) {
+                    if (!/^\d+(@s\.whatsapp\.net|@lid)?$/.test(sanitized)) {
                         return res.status(400).json({ success: false, error: 'Invalid phone number format' });
                     }
 
                     // Remove old number
                     await whitelistManager.removeNumber(decodedOldNumber);
 
-                    // Add new number with model
-                    const normalized = await whitelistManager.addNumber(sanitized, model);
+                    // Add new number with model and pushName
+                    const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName);
 
-                    this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized} (${model})`);
-                    res.json({ success: true, message: 'Whitelist entry updated', number: normalized, model });
+                    const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
+                    this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized}${logName} (${model})`);
+                    res.json({ success: true, message: 'Whitelist entry updated', number: normalized, model, pushName: sanitizedPushName });
                 } else {
-                    // Just update model for same number
-                    await whitelistManager.addNumber(decodedOldNumber, model);
+                    // Just update model and pushName for same number
+                    await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName);
 
-                    this.addLog('success', `Updated ${decodedOldNumber} to model ${model}`);
-                    res.json({ success: true, message: 'Whitelist entry updated', number: decodedOldNumber, model });
+                    const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
+                    this.addLog('success', `Updated ${decodedOldNumber}${logName} to model ${model}`);
+                    res.json({ success: true, message: 'Whitelist entry updated', number: decodedOldNumber, model, pushName: sanitizedPushName });
                 }
             } catch (error) {
                 this.addLog('error', `Failed to update whitelist: ${error.message}`);

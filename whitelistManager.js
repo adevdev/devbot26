@@ -39,10 +39,20 @@ class WhitelistManager {
                 const data = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
                 // Convert array format to Map
                 if (data.users && Array.isArray(data.users)) {
-                    this.whitelist = new Map(data.users.map(u => [u.number, u.model || 'qwen3-coder-next']));
+                    this.whitelist = new Map(data.users.map(u => [
+                        u.number,
+                        {
+                            model: u.model || 'qwen3-coder-next',
+                            pushName: u.pushName || null,
+                            jid: u.jid || u.number
+                        }
+                    ]));
                 } else if (data.numbers && Array.isArray(data.numbers)) {
                     // Legacy format - convert to new format
-                    this.whitelist = new Map(data.numbers.map(n => [n, 'qwen3-coder-next']));
+                    this.whitelist = new Map(data.numbers.map(n => [
+                        n,
+                        { model: 'qwen3-coder-next', pushName: null, jid: n }
+                    ]));
                 }
                 console.log(`Loaded ${this.whitelist.size} whitelisted numbers from cache`);
                 this.lastSyncTime = Date.now();
@@ -61,9 +71,11 @@ class WhitelistManager {
             }
 
             const data = {
-                users: Array.from(this.whitelist.entries()).map(([number, model]) => ({
+                users: Array.from(this.whitelist.entries()).map(([number, info]) => ({
                     number,
-                    model
+                    model: info.model || info, // Support legacy string format
+                    pushName: info.pushName || null,
+                    jid: info.jid || number
                 })),
                 lastUpdated: new Date().toISOString()
             };
@@ -91,7 +103,14 @@ class WhitelistManager {
             const doc = await collection.findOne({ _id: 'ai_whitelist' });
 
             if (doc && doc.users) {
-                this.whitelist = new Map(doc.users.map(u => [u.number, u.model || 'qwen3-coder-next']));
+                this.whitelist = new Map(doc.users.map(u => [
+                    u.number,
+                    {
+                        model: u.model || 'qwen3-coder-next',
+                        pushName: u.pushName || null,
+                        jid: u.jid || u.number
+                    }
+                ]));
                 await this.saveToCache();
                 console.log(`Synced ${this.whitelist.size} whitelisted numbers from MongoDB`);
             }
@@ -114,9 +133,11 @@ class WhitelistManager {
             const db = mongoClient.db();
             const collection = db.collection('devbot26');
 
-            const users = Array.from(this.whitelist.entries()).map(([number, model]) => ({
+            const users = Array.from(this.whitelist.entries()).map(([number, info]) => ({
                 number,
-                model
+                model: info.model || info, // Support legacy string format
+                pushName: info.pushName || null,
+                jid: info.jid || number
             }));
 
             await collection.updateOne(
@@ -137,13 +158,17 @@ class WhitelistManager {
         }
     }
 
-    async addNumber(number, model = 'qwen3-coder-next') {
+    async addNumber(number, model = 'qwen3-coder-next', pushName = null) {
         await this.initialize();
 
         // Normalize format: ensure @s.whatsapp.net suffix
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
 
-        this.whitelist.set(normalized, model);
+        this.whitelist.set(normalized, {
+            model,
+            pushName,
+            jid: normalized
+        });
         await this.syncToMongoDB();
 
         return normalized;
@@ -180,15 +205,29 @@ class WhitelistManager {
         await this.initialize();
 
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
-        return this.whitelist.get(normalized) || 'qwen3-coder-next';
+        const info = this.whitelist.get(normalized);
+
+        // Support both old string format and new object format
+        if (typeof info === 'string') {
+            return info;
+        }
+        return info?.model || 'qwen3-coder-next';
     }
 
     async getAll() {
         await this.initialize();
-        return Array.from(this.whitelist.entries()).map(([number, model]) => ({
-            number,
-            model
-        }));
+        return Array.from(this.whitelist.entries()).map(([number, info]) => {
+            // Support both old string format and new object format
+            if (typeof info === 'string') {
+                return { number, model: info, pushName: null, jid: number };
+            }
+            return {
+                number,
+                model: info.model,
+                pushName: info.pushName || null,
+                jid: info.jid || number
+            };
+        });
     }
 
     async clear() {

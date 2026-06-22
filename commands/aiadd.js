@@ -4,7 +4,7 @@ const whitelistManager = require('../whitelistManager');
 function getMentions(message) {
     const baileys = message.toBaileys();
     const mentionedJid = baileys?.message?.extendedTextMessage?.contextInfo?.mentionedJid || [];
-    return mentionedJid;
+    return mentionedJid.map(jid => ({ jid }));
 }
 
 module.exports = {
@@ -26,42 +26,65 @@ module.exports = {
         const mentions = getMentions(message);
 
         if (mentions.length === 0) {
-            return '*Usage:* `.aiadd @mention [model]`\n\n' +
+            return '*Usage:* `.aiadd @mention [name] [--model model]`\n\n' +
                    'Models:\n' +
                    '• `claude` - Claude Sonnet 4.5\n' +
                    '• `qwen` or empty - Qwen3 Coder Next (default)\n\n' +
-                   'Example: `.aiadd @6281234567890 claude`';
+                   'Examples:\n' +
+                   '• `.aiadd @6281234567890 John Doe`\n' +
+                   '• `.aiadd @6281234567890 Jane --model claude`\n' +
+                   '• `.aiadd @6281234567890` (no name)';
         }
 
-        // Parse model parameter (last non-@ param)
-        let modelParam = '';
-        const nonMentionParams = command.parameters.filter(p => !p.startsWith('@'));
-        if (nonMentionParams.length > 0) {
-            modelParam = nonMentionParams[nonMentionParams.length - 1].toLowerCase();
+        // Parse parameters
+        const fullText = command.parameters.join(' ');
+        let customName = null;
+        let model = 'qwen3-coder-next'; // Default
+
+        // Extract --model value
+        const modelMatch = fullText.match(/--model\s+(\S+)/);
+        if (modelMatch) {
+            const modelParam = modelMatch[1].toLowerCase();
+            if (modelParam === 'claude') {
+                model = 'claude-sonnet-4.5';
+            } else if (modelParam === 'qwen') {
+                model = 'qwen3-coder-next';
+            } else {
+                return '*Error:* Invalid model. Use `claude` or `qwen`.';
+            }
         }
 
-        let model;
-        if (modelParam === 'claude') {
-            model = 'claude-sonnet-4.5';
-        } else if (modelParam === 'qwen' || modelParam === '') {
-            model = 'qwen3-coder-next';
-        } else {
-            return '*Error:* Invalid model. Use `claude` or `qwen` (default).';
+        // Extract name: everything between @mention and --model (or end)
+        // Remove @ mentions and --model part
+        let namePart = fullText.replace(/@\S+/g, '').trim(); // Remove @mentions
+        if (modelMatch) {
+            namePart = namePart.replace(/--model\s+\S+/, '').trim(); // Remove --model part
+        }
+
+        if (namePart) {
+            customName = namePart.trim();
         }
 
         // Add all mentions to whitelist
         const added = [];
         const errors = [];
 
-        for (const targetNumber of mentions) {
+        for (const mention of mentions) {
             try {
-                const normalized = await whitelistManager.addNumber(targetNumber, model);
+                const lid = mention.jid; // This is LID format from mention
+                const pushName = customName || null;
+
+                // Save LID directly (no JID resolution)
+                const normalized = await whitelistManager.addNumber(lid, model, pushName);
                 const displayNumber = '@' + normalized.split('@')[0];
                 added.push({ display: displayNumber, jid: normalized });
-                console.log(`[AIADD] Added ${normalized} with model ${model}`);
+
+                // Log with LID and pushName
+                const logName = pushName ? ` (${pushName})` : '';
+                console.log(`[AIADD] Added ${normalized}${logName} with model ${model}`);
             } catch (error) {
-                console.error(`[AIADD] Failed to add ${targetNumber}:`, error.message);
-                errors.push(targetNumber);
+                console.error(`[AIADD] Failed to add ${mention.jid}:`, error.message);
+                errors.push(mention.jid);
             }
         }
 

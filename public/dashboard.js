@@ -608,21 +608,24 @@ function renderWhitelist(users) {
         // Handle both old format (string) and new format (object)
         const number = typeof user === 'string' ? user : user.number;
         const model = typeof user === 'string' ? 'qwen3-coder-next' : user.model;
+        const pushName = typeof user === 'object' && user.pushName ? user.pushName : 'Unknown';
+        const jid = typeof user === 'object' && user.jid ? user.jid : number;
 
-        // Extract phone number without @s.whatsapp.net for display
-        const displayNumber = number.replace('@s.whatsapp.net', '');
+        // Extract JID number (before @ symbol)
+        const jidNumber = jid.split('@')[0];
         const encodedNumber = encodeURIComponent(number);
         const encodedModel = encodeURIComponent(model);
+        const encodedPushName = encodeURIComponent(pushName);
 
         // Format model name for display
         const modelDisplay = model === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
 
         return `
             <tr>
-                <td><strong>${displayNumber}</strong><br><small style="opacity: 0.6;">${number}</small></td>
+                <td><strong>${pushName}</strong><br><small style="opacity: 0.6;">${jidNumber}</small></td>
                 <td><span class="badge">${modelDisplay}</span></td>
                 <td>
-                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}')" style="margin-right: 0.5rem;">Edit</button>
                     <button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button>
                 </td>
             </tr>
@@ -640,17 +643,20 @@ function renderWhitelistError(message) {
 function showAddWhitelistModal() {
     const modal = document.getElementById('addWhitelistModal');
     document.getElementById('whitelistNumber').value = '';
+    document.getElementById('whitelistPushName').value = '';
     document.getElementById('whitelistModel').value = 'qwen3-coder-next';
     modal.showModal();
 }
 
 // Show edit whitelist modal
-function showEditWhitelistModal(encodedNumber, encodedModel) {
+function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '') {
     const number = decodeURIComponent(encodedNumber);
     const model = decodeURIComponent(encodedModel);
+    const pushName = encodedPushName ? decodeURIComponent(encodedPushName) : '';
 
     const modal = document.getElementById('editWhitelistModal');
     document.getElementById('editWhitelistNumber').value = number;
+    document.getElementById('editWhitelistPushName').value = pushName;
     document.getElementById('editWhitelistModel').value = model;
 
     // Store original number for API call
@@ -666,6 +672,7 @@ document.getElementById('addWhitelistCancel').addEventListener('click', () => {
 
 document.getElementById('addWhitelistSubmit').addEventListener('click', async () => {
     const number = document.getElementById('whitelistNumber').value.trim();
+    const pushName = document.getElementById('whitelistPushName').value.trim();
     const model = document.getElementById('whitelistModel').value;
 
     if (!number) {
@@ -674,8 +681,8 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
     }
 
     // Basic validation
-    if (!/^\d+(@s\.whatsapp\.net)?$/.test(number)) {
-        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net suffix.');
+    if (!/^\d+(@s\.whatsapp\.net|@lid)?$/.test(number)) {
+        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net/@lid suffix.');
         return;
     }
 
@@ -684,7 +691,7 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ number, model })
+            body: JSON.stringify({ number, model, pushName: pushName || null })
         });
 
         const data = await response.json();
@@ -692,6 +699,7 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
         if (data.success) {
             document.getElementById('addWhitelistModal').close();
             document.getElementById('whitelistNumber').value = '';
+            document.getElementById('whitelistPushName').value = '';
             document.getElementById('whitelistModel').value = 'qwen3-coder-next';
             loadWhitelist();
             await showAlert('Success', 'Number added to whitelist successfully!');
@@ -712,6 +720,7 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     const modal = document.getElementById('editWhitelistModal');
     const oldNumber = modal.dataset.number;
     const newNumber = document.getElementById('editWhitelistNumber').value.trim();
+    const pushName = document.getElementById('editWhitelistPushName').value.trim();
     const model = document.getElementById('editWhitelistModel').value;
 
     if (!newNumber) {
@@ -720,8 +729,8 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     }
 
     // Basic validation
-    if (!/^\d+(@s\.whatsapp\.net)?$/.test(newNumber)) {
-        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net suffix.');
+    if (!/^\d+(@s\.whatsapp\.net|@lid)?$/.test(newNumber)) {
+        await showAlert('Error', 'Invalid phone number format. Use digits only or with @s.whatsapp.net/@lid suffix.');
         return;
     }
 
@@ -730,7 +739,7 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ newNumber, model })
+            body: JSON.stringify({ newNumber, model, pushName: pushName || null })
         });
 
         const data = await response.json();

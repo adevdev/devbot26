@@ -342,8 +342,20 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
             originalLog(...args); // Still log to console
         };
 
-        // Execute code
-        let result = eval(code);
+        // Wrap code in async IIFE to support await
+        // Try as expression first (with return), fallback to statement
+        let asyncCode;
+        let result;
+
+        try {
+            // Try as expression with return
+            asyncCode = `(async () => { return (${code}) })()`;
+            result = eval(asyncCode);
+        } catch (e) {
+            // Failed as expression, try as statement
+            asyncCode = `(async () => { ${code} })()`;
+            result = eval(asyncCode);
+        }
 
         // Restore console.log
         console.log = originalLog;
