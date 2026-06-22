@@ -3,6 +3,7 @@ const { startContinuousTyping } = require('../utils/typing');
 const https = require('https');
 const { Jimp } = require('jimp');
 const memoryManager = require('../memoryManager');
+const tools = require('../tools');
 
 
 // ============================================
@@ -171,144 +172,6 @@ module.exports = {
         fallback: true // Mark this as fallback command
     }
 };
-
-// Fetch URL content
-async function fetchUrl(url) {
-    try {
-        console.log('[FetchURL] Fetching:', url);
-        const response = await fetch(url, {
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            },
-            signal: AbortSignal.timeout(15000) // 15s timeout
-        });
-
-        if (!response.ok) {
-            return JSON.stringify({
-                error: `HTTP ${response.status}`,
-                url: url
-            });
-        }
-
-        const text = await response.text();
-
-        // Limit response size (max 50KB)
-        const MAX_SIZE = 50000;
-        const trimmed = text.length > MAX_SIZE ? text.slice(0, MAX_SIZE) + '\n... (truncated)' : text;
-
-        console.log('[FetchURL] Fetched', trimmed.length, 'bytes');
-        return trimmed;
-
-    } catch (error) {
-        console.error('[FetchURL] Error:', error.message);
-        return JSON.stringify({
-            error: error.message,
-            url: url
-        });
-    }
-}
-
-// Web search tool using EXA MCP endpoint (free, no API key)
-async function webSearch(query) {
-    try {
-        const response = await fetch('https://mcp.exa.ai/mcp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/event-stream'
-            },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'tools/call',
-                params: {
-                    name: 'web_search_exa',
-                    arguments: {
-                        query: query,
-                        type: 'auto',
-                        numResults: 5,
-                        livecrawl: 'fallback'
-                    }
-                }
-            }),
-            signal: AbortSignal.timeout(25000) // 25s timeout
-        });
-
-        if (!response.ok) {
-            console.error('[WebSearch] EXA returned HTTP', response.status);
-            return 'Search unavailable. Please answer based on your training data.';
-        }
-
-        const body = await response.text();
-
-        // Parse response - can be direct JSON or SSE format
-        const result = parseExaResponse(body);
-
-        if (!result) {
-            console.error('[WebSearch] No usable results from EXA');
-            return 'No search results found. Please answer based on your training data.';
-        }
-
-        console.log('[WebSearch] Using EXA - results retrieved');
-        return result;
-
-    } catch (error) {
-        console.error('[WebSearch] EXA error:', error.message);
-        return 'Search unavailable. Please answer based on your training data.';
-    }
-}
-
-// Parse EXA response (handles both JSON and SSE formats)
-function parseExaResponse(body) {
-    const trimmed = body.trim();
-
-    // Try direct JSON parse first
-    if (trimmed.startsWith('{')) {
-        try {
-            const parsed = JSON.parse(trimmed);
-            if (parsed.result && parsed.result.content) {
-                const textContent = parsed.result.content.find(item => item.text);
-                return textContent ? textContent.text : null;
-            }
-        } catch (e) {
-            // Not valid JSON, continue to SSE parsing
-        }
-    }
-
-    // Try SSE format (event: message\ndata: {...})
-    for (const line of body.split('\n')) {
-        if (!line.startsWith('data: ')) continue;
-
-        try {
-            const data = line.substring(6).trim();
-            const parsed = JSON.parse(data);
-            if (parsed.result && parsed.result.content) {
-                const textContent = parsed.result.content.find(item => item.text);
-                return textContent ? textContent.text : null;
-            }
-        } catch (e) {
-            // Invalid JSON in this line, continue
-        }
-    }
-
-    return null;
-}
-
-// Get current time
-function getCurrentTime() {
-    const now = new Date();
-    return JSON.stringify({
-        iso: now.toISOString(),
-        utc: now.toUTCString(),
-        local: now.toLocaleString('en-US', {
-            dateStyle: 'full',
-            timeStyle: 'long'
-        }),
-        unix: Math.floor(now.getTime() / 1000),
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        day: now.toLocaleDateString('en-US', { weekday: 'long' })
-    }, null, 2);
-}
 
 // Call AI API with tool support (multi-turn)
 async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
@@ -489,64 +352,12 @@ Instead write conversationally for mobile.`;
     ];
 
     // Define tools
-    const tools = [
-        {
-            name: 'web_search',
-            description: 'Search the web for current information, news, or any topic. Use this when you need up-to-date information or information you do not have in your training data.',
-            input_schema: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The search query'
-                    }
-                },
-                required: ['query']
-            }
-        },
-        {
-            name: 'fetch_url',
-            description: 'Fetch and read the content from a URL. Use this to access specific web pages, GitHub files, documentation, articles, or any URL content.',
-            input_schema: {
-                type: 'object',
-                properties: {
-                    url: {
-                        type: 'string',
-                        description: 'The URL to fetch (must include http:// or https://)'
-                    }
-                },
-                required: ['url']
-            }
-        },
-        {
-            name: 'get_time',
-            description: 'Get current date and time in multiple formats. Use when user asks about current time, date, day of week, or needs timestamp.',
-            input_schema: {
-                type: 'object',
-                properties: {},
-                required: []
-            }
-        },
-        {
-            name: 'image_search',
-            description: 'Search for images on Pinterest and returns high-quality image URLs. Use this tool EXCLUSIVELY when user asks for pictures, images, photos, or any visual content. Do NOT use web_search for image requests - this tool provides everything needed.',
-            input_schema: {
-                type: 'object',
-                properties: {
-                    query: {
-                        type: 'string',
-                        description: 'The image search query (e.g., "cute cat", "sunset beach", "modern architecture")'
-                    }
-                },
-                required: ['query']
-            }
-        }
-    ];
+    const toolDefinitions = tools.toolDefinitions;
 
     // Tool calling loop (max iterations to prevent infinite loops)
     let response;
     try {
-        response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey);
         console.log(`[AI] Initial API response: stop_reason=${response.stop_reason}, content_blocks=${response.content?.length || 0}`);
     } catch (error) {
         console.error('[AI] API call failed:', error.message);
@@ -605,20 +416,19 @@ Instead write conversationally for mobile.`;
             // Execute the appropriate tool
             if (toolUse.name === 'web_search') {
                 console.log('[AI] Using web search:', toolUse.input.query);
-                toolResult = await webSearch(toolUse.input.query);
+                toolResult = await tools.webSearch(toolUse.input.query);
             } else if (toolUse.name === 'fetch_url') {
                 console.log('[AI] Fetching URL:', toolUse.input.url);
-                toolResult = await fetchUrl(toolUse.input.url);
+                toolResult = await tools.fetchUrl(toolUse.input.url);
             } else if (toolUse.name === 'get_time') {
                 console.log('[AI] Getting current time');
-                toolResult = getCurrentTime();
+                toolResult = tools.getCurrentTime();
             } else if (toolUse.name === 'image_search') {
                 console.log('[AI] Searching images:', toolUse.input.query);
                 try {
-                    // Call Pinterest API endpoint
-                    const apiUrl = `https://apied26.adevdev.com/pinterest?q=${encodeURIComponent(toolUse.input.query)}`;
-                    const apiResponse = await fetch(apiUrl);
-                    const apiData = await apiResponse.json();
+                    // Call image search tool
+                    const searchResult = await tools.imageSearch(toolUse.input.query);
+                    const apiData = JSON.parse(searchResult);
 
                     if (apiData.success && apiData.images && apiData.images.length > 0) {
                         // Download first image
@@ -694,7 +504,7 @@ Instead write conversationally for mobile.`;
         });
 
         // Next API call with tool results
-        response = await callAIAPI(messages, tools, systemPrompt, model, apiKey);
+        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey);
     }
 
     // If we hit max iterations while AI still wants to use tools, force final response
