@@ -350,7 +350,14 @@ Current time: ${currentTime}`;
     systemPrompt += `
 
 CRITICAL INSTRUCTIONS:
-- Your training data has a knowledge cutoff date. The current date (${currentDate}) may be AFTER your training cutoff.
+
+1. **ALWAYS respond in the SAME LANGUAGE as the user's current message.**
+   - If user writes in Indonesian, respond in Indonesian
+   - If user writes in English, respond in English
+   - Ignore language from memory/previous messages - only match the LATEST user input language
+   - Example: User says "apa itu bitcoin?" → respond in Indonesian, NOT English
+
+2. Your training data has a knowledge cutoff date. The current date (${currentDate}) may be AFTER your training cutoff.
 - For ANY query about current events, prices, holidays, schedules, news, weather, or time-sensitive information, you MUST use the web_search tool.
 - For queries about "today", "this month", "this year", or specific future dates, ALWAYS use web_search first.
 - Use the get_time tool if you need detailed timestamp information (unix time, ISO format, timezone, etc).
