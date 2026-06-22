@@ -1,10 +1,15 @@
 node_modules/
 .wachan/
 wachan/*
+wachan
 data/*
+data
 *.log
 .env
 public/dashboard.min.js
 public/dashboard.min.html
 .claude
 memory/*
+memory
+lab
+lab/*
