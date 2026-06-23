@@ -552,6 +552,98 @@ class BotDashboard {
             }
         });
 
+        // ===== ROOM MANAGEMENT ENDPOINTS =====
+
+        // API: Get all rooms
+        this.app.get('/api/rooms', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const roomManager = require('./roomManager');
+                const rooms = await roomManager.getAllRooms();
+                res.json({ success: true, rooms });
+            } catch (error) {
+                this.addLog('error', `Failed to get rooms: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add or update room
+        this.app.post('/api/rooms', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { roomId, name, allowAI, allowAiCommand, allowCommands, ignoreAll, allowedCommands } = req.body;
+
+                if (!roomId) {
+                    return res.status(400).json({ success: false, error: 'roomId required' });
+                }
+
+                const roomManager = require('./roomManager');
+                const existing = await roomManager.getRoomSettings(roomId);
+
+                let room;
+                if (existing) {
+                    room = await roomManager.updateRoom(roomId, {
+                        name,
+                        allowAI,
+                        allowAiCommand,
+                        allowCommands,
+                        ignoreAll,
+                        allowedCommands
+                    });
+                    this.addLog('success', `Updated room: ${name || roomId}`);
+                } else {
+                    room = await roomManager.addRoom(roomId, name, {
+                        allowAI,
+                        allowAiCommand,
+                        allowCommands,
+                        ignoreAll,
+                        allowedCommands
+                    });
+                    this.addLog('success', `Added room: ${name || roomId}`);
+                }
+
+                res.json({ success: true, room });
+            } catch (error) {
+                this.addLog('error', `Failed to add/update room: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update room settings
+        this.app.put('/api/rooms/:roomId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { roomId } = req.params;
+                const updates = req.body;
+
+                const roomManager = require('./roomManager');
+                const room = await roomManager.updateRoom(roomId, updates);
+
+                this.addLog('success', `Updated room settings: ${room.name || roomId}`);
+                res.json({ success: true, room });
+            } catch (error) {
+                this.addLog('error', `Failed to update room: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Delete room
+        this.app.delete('/api/rooms/:roomId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { roomId } = req.params;
+
+                const roomManager = require('./roomManager');
+                const removed = await roomManager.removeRoom(roomId);
+
+                if (removed) {
+                    this.addLog('success', `Removed room: ${roomId}`);
+                    res.json({ success: true });
+                } else {
+                    res.status(404).json({ success: false, error: 'Room not found' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to remove room: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // API: Get memory details for a specific room
         this.app.get('/api/memory/:roomId', this.requireAuth.bind(this), async (req, res) => {
             try {

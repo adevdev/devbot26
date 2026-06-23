@@ -447,6 +447,7 @@
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('terminal', this)">Terminal</button>
                 <button class="tab-btn" onclick="switchTab('commands', this)">Commands</button>
+                <button class="tab-btn" onclick="switchTab('rooms', this)">Rooms</button>
                 <button class="tab-btn" onclick="switchTab('ai-settings', this)">AI Settings</button>
             </div>
         </div>
@@ -483,6 +484,40 @@
                 <tbody id="commandsTableBody">
                     <tr>
                         <td colspan="6" style="text-align: center; opacity: 0.6;">Loading commands...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Rooms Tab -->
+    <div id="tab-rooms" class="tab-content">
+        <div class="commands-container">
+            <div class="commands-header">
+                <h2 style="color: #0f0; font-size: 1rem;">Room / Chat Management</h2>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn" onclick="showAddRoomModal()">+ Add Room</button>
+                </div>
+            </div>
+            <div style="margin-bottom: 1rem; opacity: 0.7; font-size: 0.9rem;">
+                Control bot behavior per room. Settings auto-save on first message.
+            </div>
+            <table class="commands-table">
+                <thead>
+                    <tr>
+                        <th>Room ID</th>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>.ai Cmd</th>
+                        <th>Commands</th>
+                        <th>AI Fallback</th>
+                        <th>Ignore All</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="roomsTableBody">
+                    <tr>
+                        <td colspan="8" style="text-align: center; opacity: 0.6;">Loading rooms...</td>
                     </tr>
                 </tbody>
             </table>
@@ -832,6 +867,114 @@
             <div class="modal-buttons">
                 <button class="btn" id="editWhitelistCancel">Cancel</button>
                 <button class="btn" id="editWhitelistSubmit">Update</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Add Room Modal -->
+    <dialog id="addRoomModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Add Room / Chat</h3>
+            <div class="input-group">
+                <label>Room ID:</label>
+                <input type="text" id="roomId" placeholder="120363026034464208@g.us or 6281234567890@s.whatsapp.net">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Group: 120363026034464208@g.us | Private: 6281234567890@s.whatsapp.net
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Room Name (Optional):</label>
+                <input type="text" id="roomName" placeholder="My Group or Contact Name">
+            </div>
+            <div class="input-group" id="roomAllowAIGroup">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="roomAllowAiCommand" checked style="width: auto;">
+                    Allow .ai command
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Allow explicit .ai command in groups
+                </small>
+            </div>
+            <div class="input-group" id="roomAllowAIFallbackGroup">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="roomAllowAI" checked style="width: auto;">
+                    Allow AI fallback (unknown commands)
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Allow AI for unknown commands like .translate, .summarize (Groups only)
+                </small>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="roomAllowCommands" checked style="width: auto;">
+                    Allow Commands
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Allow all bot commands
+                </small>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="roomIgnoreAll" style="width: auto;">
+                    Ignore All Messages
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Bot will completely ignore this room
+                </small>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="addRoomCancel">Cancel</button>
+                <button class="btn" id="addRoomSubmit">Add Room</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit Room Modal -->
+    <dialog id="editRoomModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Edit Room Settings</h3>
+            <div class="input-group">
+                <label>Room ID:</label>
+                <input type="text" id="editRoomId" readonly style="opacity: 0.6; cursor: not-allowed;">
+            </div>
+            <div class="input-group">
+                <label>Room Name (Optional):</label>
+                <input type="text" id="editRoomName" placeholder="My Group or Contact Name">
+            </div>
+            <div class="input-group" id="editRoomAllowAiCmdGroup">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="editRoomAllowAiCommand" style="width: auto;">
+                    Allow .ai command
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Allow explicit .ai command in groups
+                </small>
+            </div>
+            <div class="input-group" id="editRoomAllowAIGroup">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="editRoomAllowAI" style="width: auto;">
+                    Allow AI fallback (unknown commands)
+                </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Groups only - Allow AI for unknown commands
+                </small>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="editRoomAllowCommands" style="width: auto;">
+                    Allow Commands
+                </label>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem;">
+                    <input type="checkbox" id="editRoomIgnoreAll" style="width: auto;">
+                    Ignore All Messages
+                </label>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn danger" id="editRoomDelete">Delete Room</button>
+                <button class="btn" id="editRoomCancel">Cancel</button>
+                <button class="btn" id="editRoomSubmit">Update</button>
             </div>
         </div>
     </dialog>

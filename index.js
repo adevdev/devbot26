@@ -131,6 +131,110 @@ dashboard.onStopBot(async () => {
 // Load all commands from folder FIRST
 commands.fromFolder('./commands');
 
+// Room check for commands - BEFORE owner check
+commands.beforeEach(async (context, next) => {
+    const { message, group, command } = context;
+    const roomManager = require('./roomManager');
+    const roomId = message.room;
+
+    // Get room settings
+    let roomSettings = await roomManager.getRoomSettings(roomId);
+
+    // If no settings yet, create with defaults
+    if (!roomSettings) {
+        let roomName = null;
+        const isGroup = !!group;
+
+        if (isGroup && group.subject) {
+            roomName = group.subject;
+        } else if (!isGroup) {
+            try {
+                const wachan = require('wachan');
+                const userData = await wachan.getUserData(message.sender.id);
+                if (userData && userData.pushName) {
+                    roomName = userData.pushName;
+                }
+            } catch (e) {
+                roomName = message.sender.id;
+            }
+        }
+
+        roomSettings = await roomManager.getOrCreateRoom(roomId, roomName, isGroup);
+    }
+
+    // Check if room is ignored
+    if (roomSettings.ignoreAll) {
+        // Silent ignore - don't process command
+        return;
+    }
+
+    // Check if commands are disabled for this room
+    if (roomSettings.allowCommands === false) {
+        // Commands disabled
+        return;
+    }
+
+    // Special check for .ai command - can be disabled separately
+    if (command.name === 'ai' || command.aliases?.includes('ai')) {
+        const isGroup = !!group;
+        // For groups, check allowAiCommand setting
+        if (isGroup && roomSettings.allowAiCommand === false) {
+            // .ai command disabled for this group
+            return;
+        }
+    }
+
+    // Store settings in context for later use
+    context.roomSettings = roomSettings;
+
+    next();
+});
+
+// Owner-only command check
+wachan.onReceive(wachan.messageType.any, async (context, next) => {
+    const { message, group } = context;
+    const roomManager = require('./roomManager');
+    const roomId = message.room;
+
+    // Get or auto-create room settings with defaults (for both groups and private)
+    let roomSettings = await roomManager.getRoomSettings(roomId);
+
+    if (!roomSettings) {
+        // Auto-create with name if available
+        let roomName = null;
+        const isGroup = !!group;
+
+        if (isGroup && group.subject) {
+            roomName = group.subject;
+        } else if (!isGroup) {
+            // For private chat, try to get contact name
+            try {
+                const wachan = require('wachan');
+                const userData = await wachan.getUserData(message.sender.id);
+                if (userData && userData.pushName) {
+                    roomName = userData.pushName;
+                }
+            } catch (e) {
+                // Use sender id as fallback
+                roomName = message.sender.id;
+            }
+        }
+
+        roomSettings = await roomManager.getOrCreateRoom(roomId, roomName, isGroup);
+    }
+
+    // Check if bot should ignore this room entirely
+    if (roomSettings.ignoreAll) {
+        // Silent ignore - don't process anything
+        return;
+    }
+
+    // Store room settings in context for later checks
+    context.roomSettings = roomSettings;
+
+    next();
+});
+
 // Fallback handler: Private messages -> AI by default, Groups -> AI only for unknown commands with prefix
 // Registered AFTER loading commands so we can check if command exists
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
@@ -164,12 +268,32 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
         const commandInfo = commands.getCommandInfo(commandName);
 
         if (commandInfo) {
-            // Valid command exists, let it handle normally
+            // Valid command exists - check room permissions for groups
+            if (isGroup && context.roomSettings) {
+                const roomManager = require('./roomManager');
+                const allowed = await roomManager.isCommandAllowed(message.room, commandName);
+                if (!allowed) {
+                    // Command not allowed in this room
+                    return;
+                }
+            }
+
+            // Valid command allowed, let it handle normally
             next();
             return;
         }
 
-        // Unknown command with prefix -> route to AI
+        // Unknown command with prefix -> check if AI allowed, then route to AI
+        if (isGroup && context.roomSettings) {
+            const roomManager = require('./roomManager');
+            const aiAllowed = await roomManager.isAIAllowed(message.room);
+            if (!aiAllowed) {
+                // AI not allowed in this room
+                return;
+            }
+        }
+
+        // AI allowed, route unknown command to AI
         try {
             const aiCommandModule = require('./commands/ai.js');
             const aiContext = {
@@ -200,6 +324,16 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
     // No prefix found
     if (isGroup) {
         // In groups, require prefix for commands
+        next();
+        return;
+    }
+
+    // Private message without prefix
+    // BUT: check for special commands first (dev, $cmd, #eval)
+    const text = message.text.trim();
+
+    // Skip AI if this is a special command
+    if (text.toLowerCase() === 'dev' || text.startsWith('$') || text.startsWith('#')) {
         next();
         return;
     }

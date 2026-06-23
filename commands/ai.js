@@ -271,7 +271,7 @@ module.exports = {
     },
     options: {
         aliases: ['ask', 'chat'],
-        description: 'Ask AI assistan)',
+        description: 'Ask AI assistan',
         sectionName: 'AI',
         fallback: true // Mark this as fallback command
     }

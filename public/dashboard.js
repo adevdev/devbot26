@@ -433,8 +433,8 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName, buttonElement) {
-    // Check authentication for commands and ai-settings tabs
-    if ((tabName === 'commands' || tabName === 'ai-settings') && !isAuthenticated) {
+    // Check authentication for commands, rooms, and ai-settings tabs
+    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'ai-settings') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
@@ -450,6 +450,8 @@ function switchTab(tabName, buttonElement) {
     // Load data based on tab
     if (tabName === 'commands') {
         loadCommands();
+    } else if (tabName === 'rooms') {
+        loadRooms();
     } else if (tabName === 'ai-settings') {
         // Initialize first sub-tab as active
         document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -984,7 +986,146 @@ async function loadWhitelist() {
     }
 }
 
-// Load memory list
+// Load rooms list
+async function loadRooms() {
+    try {
+        const response = await fetch('/api/rooms', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            renderRooms(data.rooms);
+        } else {
+            renderRoomsError('Failed to load rooms');
+        }
+    } catch (error) {
+        renderRoomsError('Error loading rooms: ' + error.message);
+    }
+}
+
+// Render rooms table
+function renderRooms(rooms) {
+    const tbody = document.getElementById('roomsTableBody');
+
+    if (!rooms || rooms.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; opacity: 0.6;">No rooms configured</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rooms.map(room => {
+        const isGroup = room.roomId.includes('@g.us');
+        const roomType = isGroup ? '<span style="color: #0ff;">Group</span>' : '<span style="color: #ff0;">Private</span>';
+
+        const aiCmdStatus = isGroup
+            ? (room.allowAiCommand !== false ? '<span style="color: #0f0;">✓ On</span>' : '<span style="color: #f00;">✗ Off</span>')
+            : '<span style="opacity: 0.5;">N/A</span>';
+
+        const cmdStatus = room.allowCommands !== false ? '<span style="color: #0f0;">✓ On</span>' : '<span style="color: #f00;">✗ Off</span>';
+
+        const aiFallbackStatus = isGroup
+            ? (room.allowAI !== false ? '<span style="color: #0f0;">✓ On</span>' : '<span style="color: #f00;">✗ Off</span>')
+            : '<span style="opacity: 0.5;">N/A</span>';
+
+        const ignoreStatus = room.ignoreAll ? '<span style="color: #f00;">✓ On</span>' : '<span style="color: #0f0;">✗ Off</span>';
+
+        return `
+            <tr>
+                <td style="font-family: monospace; font-size: 0.85rem;">${room.roomId}</td>
+                <td>${room.name || '<span style="opacity: 0.5;">—</span>'}</td>
+                <td>${roomType}</td>
+                <td>${aiCmdStatus}</td>
+                <td>${cmdStatus}</td>
+                <td>${aiFallbackStatus}</td>
+                <td>${ignoreStatus}</td>
+                <td>
+                    <button class="btn btn-small" onclick="showEditRoomModal('${room.roomId}')">Edit</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderRoomsError(message) {
+    const tbody = document.getElementById('roomsTableBody');
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f00;">${message}</td></tr>`;
+}
+
+// Show add room modal
+function showAddRoomModal() {
+    document.getElementById('roomId').value = '';
+    document.getElementById('roomName').value = '';
+    document.getElementById('roomAllowAiCommand').checked = true;
+    document.getElementById('roomAllowAI').checked = true;
+    document.getElementById('roomAllowCommands').checked = true;
+    document.getElementById('roomIgnoreAll').checked = false;
+
+    // Show AI options by default (will hide if private detected on submit)
+    document.getElementById('roomAllowAIGroup').style.display = 'block';
+    document.getElementById('roomAllowAIFallbackGroup').style.display = 'block';
+
+    document.getElementById('addRoomModal').showModal();
+}
+
+// Show edit room modal
+async function showEditRoomModal(roomId) {
+    try {
+        const response = await fetch('/api/rooms', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const room = data.rooms.find(r => r.roomId === roomId);
+            if (room) {
+                const isGroup = room.roomId.includes('@g.us');
+
+                document.getElementById('editRoomId').value = room.roomId;
+                document.getElementById('editRoomName').value = room.name || '';
+                document.getElementById('editRoomAllowAiCommand').checked = room.allowAiCommand !== false;
+                document.getElementById('editRoomAllowAI').checked = room.allowAI !== false;
+                document.getElementById('editRoomAllowCommands').checked = room.allowCommands !== false;
+                document.getElementById('editRoomIgnoreAll').checked = room.ignoreAll === true;
+
+                // Hide AI options for private chats
+                if (isGroup) {
+                    document.getElementById('editRoomAllowAiCmdGroup').style.display = 'block';
+                    document.getElementById('editRoomAllowAIGroup').style.display = 'block';
+                } else {
+                    document.getElementById('editRoomAllowAiCmdGroup').style.display = 'none';
+                    document.getElementById('editRoomAllowAIGroup').style.display = 'none';
+                }
+
+                document.getElementById('editRoomModal').showModal();
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', 'Failed to load room data: ' + error.message);
+    }
+}
+
+// Delete room
+async function deleteRoom(roomId) {
+    const confirmed = await showConfirm('Remove Room', `Remove room configuration for ${roomId}?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            await showAlert('Success', 'Room removed');
+            loadRooms();
+        } else {
+            await showAlert('Error', 'Failed to remove room');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error removing room: ' + error.message);
+    }
+}
 async function loadMemory() {
     try {
         const response = await fetch('/api/memory', {
@@ -1252,6 +1393,106 @@ async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushNa
 
     modal.showModal();
 }
+
+// Add room modal handlers
+document.getElementById('addRoomCancel').addEventListener('click', () => {
+    document.getElementById('addRoomModal').close();
+});
+
+document.getElementById('addRoomSubmit').addEventListener('click', async () => {
+    const roomId = document.getElementById('roomId').value.trim();
+    const name = document.getElementById('roomName').value.trim();
+    const allowAiCommand = document.getElementById('roomAllowAiCommand').checked;
+    const allowAI = document.getElementById('roomAllowAI').checked;
+    const allowCommands = document.getElementById('roomAllowCommands').checked;
+    const ignoreAll = document.getElementById('roomIgnoreAll').checked;
+
+    if (!roomId) {
+        await showAlert('Error', 'Room ID is required');
+        return;
+    }
+
+    // Detect if group or private
+    const isGroup = roomId.includes('@g.us');
+
+    try {
+        const response = await fetch('/api/rooms', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                roomId,
+                name: name || null,
+                allowAiCommand: isGroup ? allowAiCommand : null,
+                allowAI: isGroup ? allowAI : null, // null for private = N/A
+                allowCommands,
+                ignoreAll
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('addRoomModal').close();
+            await showAlert('Success', 'Room added successfully!');
+            loadRooms();
+        } else {
+            await showAlert('Error', data.error || 'Failed to add room');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error adding room: ' + error.message);
+    }
+});
+
+// Edit room modal handlers
+document.getElementById('editRoomCancel').addEventListener('click', () => {
+    document.getElementById('editRoomModal').close();
+});
+
+document.getElementById('editRoomDelete').addEventListener('click', async () => {
+    const roomId = document.getElementById('editRoomId').value.trim();
+    document.getElementById('editRoomModal').close();
+    await deleteRoom(roomId);
+});
+
+document.getElementById('editRoomSubmit').addEventListener('click', async () => {
+    const roomId = document.getElementById('editRoomId').value.trim();
+    const name = document.getElementById('editRoomName').value.trim();
+    const allowAiCommand = document.getElementById('editRoomAllowAiCommand').checked;
+    const allowAI = document.getElementById('editRoomAllowAI').checked;
+    const allowCommands = document.getElementById('editRoomAllowCommands').checked;
+    const ignoreAll = document.getElementById('editRoomIgnoreAll').checked;
+
+    // Detect if group or private
+    const isGroup = roomId.includes('@g.us');
+
+    try {
+        const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                name: name || null,
+                allowAiCommand: isGroup ? allowAiCommand : null,
+                allowAI: isGroup ? allowAI : null, // null for private = N/A
+                allowCommands,
+                ignoreAll
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('editRoomModal').close();
+            await showAlert('Success', 'Room settings updated!');
+            loadRooms();
+        } else {
+            await showAlert('Error', data.error || 'Failed to update room');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating room: ' + error.message);
+    }
+});
 
 // Add whitelist modal handlers
 document.getElementById('addWhitelistCancel').addEventListener('click', () => {
