@@ -641,6 +641,7 @@ Instead write conversationally for mobile.`;
     // Remove qwen-specific artifacts (internal tokens that leak into response)
     finalText = finalText.replace(/^<RSPC>\s*/i, ''); // Remove <RSPC> prefix
     finalText = finalText.replace(/^<\/RSPC>\s*/i, ''); // Remove </RSPC> if present
+    finalText = finalText.replace(/\*\*/g, ''); // Remove double asterisks (markdown bold)
 
     console.log(`[AI] Final text extracted: ${finalText.substring(0, 100)}...`);
     console.log('[AI] Response content blocks:', JSON.stringify(response.content, null, 2));
