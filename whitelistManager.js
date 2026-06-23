@@ -388,6 +388,29 @@ class WhitelistManager {
         await this.syncToMongoDB();
     }
 
+    // Set usage count (for manual adjustment via dashboard)
+    async setUsageCount(number, count) {
+        await this.initialize();
+
+        const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const info = this.whitelist.get(normalized);
+
+        if (!info || typeof info === 'string') {
+            console.warn(`[Quota] Cannot set usage for ${normalized}: not found or legacy format`);
+            return;
+        }
+
+        // Validate count
+        if (typeof count !== 'number' || count < 0) {
+            console.warn(`[Quota] Invalid usage count: ${count}`);
+            return;
+        }
+
+        info.usageCount = count;
+        await this.syncToMongoDB();
+        console.log(`[Quota] Set usage count for ${normalized}: ${count}`);
+    }
+
     // Update quota settings for a user
     async updateQuotaSettings(number, quota, resetPeriod) {
         await this.initialize();

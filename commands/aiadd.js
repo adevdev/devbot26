@@ -124,10 +124,31 @@ module.exports = {
         for (const mention of mentions) {
             try {
                 const lid = mention.jid; // This is LID format from mention
-                const pushName = customName || null;
 
-                // Save LID directly - whitelistManager will get defaults if null
-                const normalized = await whitelistManager.addNumber(lid, model, pushName, quota, resetPeriod);
+                // Get user data from WhatsApp to get accurate pushName
+                const wachan = require('wachan');
+                let pushName = customName || null;
+                let jidToStore = lid;
+
+                try {
+                    const userData = await wachan.getUserData(lid);
+                    if (userData) {
+                        // Use actual pushName if no custom name provided
+                        if (!customName && userData.pushName) {
+                            pushName = userData.pushName;
+                        }
+                        // Store JID if available, otherwise use LID
+                        if (userData.id) {
+                            jidToStore = userData.id;
+                        }
+                        console.log(`[AIADD] Got user data: ${userData.pushName} (JID: ${userData.id}, LID: ${userData.lid || 'none'})`);
+                    }
+                } catch (userDataError) {
+                    console.warn(`[AIADD] Could not get user data for ${lid}, using LID directly:`, userDataError.message);
+                }
+
+                // Save with JID (preferred) or LID - whitelistManager will get defaults if null
+                const normalized = await whitelistManager.addNumber(jidToStore, model, pushName, quota, resetPeriod);
                 const displayNumber = '@' + normalized.split('@')[0];
                 added.push({ display: displayNumber, jid: normalized });
 

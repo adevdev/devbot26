@@ -136,14 +136,26 @@
         #terminal {
             width: 100%;
             height: 100%;
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
         }
-        
+
         .xterm {
             height: 100%;
         }
-        
+
         .xterm-viewport {
             overflow-y: auto !important;
+        }
+
+        /* Enable text selection in xterm */
+        .xterm-screen {
+            user-select: text !important;
+            -webkit-user-select: text !important;
+            -moz-user-select: text !important;
+            -ms-user-select: text !important;
         }
 
         /* Commands management styles */
@@ -491,7 +503,7 @@
                     <h3 style="color: #0f0; margin: 0;">Default Settings</h3>
                     <button class="btn btn-small" onclick="showEditDefaultsModal()">Edit Defaults</button>
                 </div>
-                <div id="defaultSettingsDisplay" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+                <div id="defaultSettingsDisplay" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem;">
                     <div>
                         <small style="opacity: 0.7;">Default Model:</small>
                         <div id="defaultModel" style="color: #0f0; font-weight: bold;">Loading...</div>
@@ -507,6 +519,21 @@
                     <div>
                         <small style="opacity: 0.7;">Vision Fallback:</small>
                         <div id="defaultVisionModel" style="color: #0f0; font-weight: bold;">Loading...</div>
+                    </div>
+                </div>
+                <div style="border-top: 1px solid #0f0; padding-top: 1rem; margin-top: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <div>
+                            <div style="font-weight: bold; margin-bottom: 0.5rem;">Whitelist Mode:</div>
+                            <div id="whitelistModeDisplay" style="color: #0f0; font-size: 0.9rem;">Loading...</div>
+                        </div>
+                        <select id="whitelistModeSelect" onchange="updateWhitelistMode()" style="background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                            <option value="strict">Strict (Whitelist Only)</option>
+                            <option value="auto">Auto (Add New Users)</option>
+                        </select>
+                    </div>
+                    <div style="margin-top: 0.5rem; opacity: 0.7; font-size: 0.85rem;">
+                        <span id="whitelistModeDescription">Strict: Only whitelisted users can use AI. Auto: New users are automatically added with default settings.</span>
                     </div>
                 </div>
                 <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
@@ -547,6 +574,7 @@
                         <tr>
                             <th>Model ID</th>
                             <th>Display Name</th>
+                            <th>Provider</th>
                             <th>Vision Support</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -554,7 +582,7 @@
                     </thead>
                     <tbody id="modelsTableBody">
                         <tr>
-                            <td colspan="5" style="text-align: center; opacity: 0.6;">Loading models...</td>
+                            <td colspan="6" style="text-align: center; opacity: 0.6;">Loading models...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -716,6 +744,13 @@
                 </small>
             </div>
             <div class="input-group">
+                <label>Current Usage:</label>
+                <input type="number" id="editWhitelistUsage" placeholder="0" value="0" min="0" max="10000" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Current number of requests used (set to 0 to reset usage)
+                </small>
+            </div>
+            <div class="input-group">
                 <label>Quota Reset Period:</label>
                 <select id="editWhitelistResetPeriod" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
                     <option value="per5Hours">Every 5 Hours</option>
@@ -794,6 +829,16 @@
                 </small>
             </div>
             <div class="input-group">
+                <label>API Provider Format:</label>
+                <select id="addModelProvider" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="anthropic">Anthropic (Claude API format)</option>
+                    <option value="openai">OpenAI (ChatGPT API format)</option>
+                </select>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    API format this model uses for requests
+                </small>
+            </div>
+            <div class="input-group">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                     <input type="checkbox" id="addModelSupportsVision" style="width: auto;">
                     <span>Supports Vision (can process images)</span>
@@ -826,6 +871,13 @@
             <div class="input-group">
                 <label>Display Name:</label>
                 <input type="text" id="editModelDisplayName" placeholder="GPT-4 Omni" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+            </div>
+            <div class="input-group">
+                <label>API Provider Format:</label>
+                <select id="editModelProvider" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="anthropic">Anthropic (Claude API format)</option>
+                    <option value="openai">OpenAI (ChatGPT API format)</option>
+                </select>
             </div>
             <div class="input-group">
                 <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">

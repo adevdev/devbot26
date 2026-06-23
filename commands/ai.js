@@ -8,24 +8,14 @@ const tools = require('../tools');
 
 
 // ============================================
-// AI API Configuration - Edit these variables
+// AI API Configuration
 // ============================================
 
-// Model-to-Provider mapping
-const MODEL_PROVIDERS = {
-    // Anthropic-compatible models (all models use anthropic format)
-    'qwen3-coder-next': 'anthropic',
-    'claude-sonnet-4.5': 'anthropic'
-};
+// All AI configuration (models, providers, paths) is now managed via Dashboard → AI Settings
+// This makes the system fully modular and configurable without code changes
 
-// OpenAI Configuration
-const OPENAI_ENDPOINT = 'ai2.adevdev.com';
-const OPENAI_PATH = '/v1/chat/completions';
-
-// Anthropic Configuration
-const ANTHROPIC_ENDPOINT = 'ai2.adevdev.com';
-const ANTHROPIC_PATH = '/v1/messages';
-const ANTHROPIC_VERSION = '2023-06-01'; // Check docs for latest version
+// Configuration is stored in file/MongoDB based on AI_SETTINGS_STORAGE env var
+// API Endpoint fallback default: 'ai2.adevdev.com'
 // ============================================
 
 
@@ -55,7 +45,21 @@ module.exports = {
         // Log to console (auto-piped to dashboard)
         const userText = command.parameters.join(' ') || '(no text)';
         const hasImage = message.isMedia && message.type === 'image';
+        // Get user push name for logging
+        const wachan = require('wachan');
+        let pushName = message.sender.name || 'Unknown';
+        try {
+            const userData = await wachan.getUserData(message.sender.id);
+            if (userData && userData.pushName) {
+                pushName = userData.pushName;
+            }
+        } catch (e) {
+            // Use fallback name
+        }
+
+        // Log AI command to console (detailed) and dashboard (censored - wachan handles auth display)
         console.log(`[AI] Command from ${message.sender.id}: ${hasImage ? '[IMAGE] ' : ''}${userText}`);
+        console.log(`[${pushName}] [AI]: [MESSAGE HIDDEN]`); // Dashboard shows censored, wachan handles auth
 
         // Check whitelist (skip if already checked by fallback handler)
         // ponytail: check both id and lid since @mentions use lid
@@ -64,17 +68,67 @@ module.exports = {
             const isWhitelistedByLid = message.sender.lid ? await whitelistManager.isWhitelisted(message.sender.lid) : false;
 
             if (!isWhitelistedById && !isWhitelistedByLid) {
-                console.log(`[AI] Access denied for ${message.sender.id}`);
-                return '*Access denied.* AI command is only available for whitelisted users.';
+                // Check whitelist mode
+                const whitelistMode = await settingsManager.getWhitelistMode();
+
+                if (whitelistMode === 'strict') {
+                    // Strict mode: deny access
+                    console.log(`[AI] Access denied for ${message.sender.id} (strict mode)`);
+                    return '*Access denied.* AI command is only available for whitelisted users.';
+                } else if (whitelistMode === 'auto') {
+                    // Auto mode: add user with defaults
+                    console.log(`[AI] Auto-adding ${message.sender.id} to whitelist (auto mode)`);
+                    const defaultModel = await settingsManager.getDefaultModel();
+                    const defaultQuota = await settingsManager.getDefaultQuota();
+                    const defaultResetPeriod = await settingsManager.getDefaultResetPeriod();
+
+                    // Get accurate user data from WhatsApp
+                    let pushName = message.sender.name || null;
+                    let jidToStore = message.sender.id;
+
+                    try {
+                        const wachan = require('wachan');
+                        const userData = await wachan.getUserData(message.sender.id);
+                        if (userData) {
+                            // Use WhatsApp's pushName (more reliable)
+                            if (userData.pushName) {
+                                pushName = userData.pushName;
+                            }
+                            // Prefer JID over LID if both available
+                            if (userData.id) {
+                                jidToStore = userData.id;
+                            }
+                            console.log(`[AI] Got user data: ${userData.pushName} (JID: ${userData.id}, LID: ${userData.lid || 'none'})`);
+                        }
+                    } catch (userDataError) {
+                        console.warn(`[AI] Could not get user data, using message sender info:`, userDataError.message);
+                    }
+
+                    await whitelistManager.addNumber(
+                        jidToStore,
+                        defaultModel,
+                        pushName,
+                        defaultQuota,
+                        defaultResetPeriod
+                    );
+                    console.log(`[AI] Auto-added ${jidToStore}: ${defaultModel}, ${defaultQuota}/${defaultResetPeriod}${pushName ? ` (${pushName})` : ''}`);
+
+                    // Important: Mark as no longer needing whitelist check since we just added them
+                    // This allows the quota check to proceed with the newly added user
+                }
             }
         }
 
         // Check quota (try both lid and jid, like whitelist check)
         let quotaCheck = null;
+        let workingIdentifier = null; // Track which identifier worked for later increment
 
         // Try lid first if available
         if (message.sender.lid) {
             quotaCheck = await whitelistManager.checkQuota(message.sender.lid);
+            if (quotaCheck.allowed) {
+                workingIdentifier = message.sender.lid;
+            }
         }
 
         // If lid failed or not found, try jid
@@ -83,6 +137,9 @@ module.exports = {
             // Use jid result if lid was not whitelisted or jid has better result
             if (!quotaCheck || quotaCheck.reason === 'Not whitelisted') {
                 quotaCheck = jidCheck;
+                if (jidCheck.allowed) {
+                    workingIdentifier = message.sender.id;
+                }
             }
         }
 
@@ -106,11 +163,6 @@ module.exports = {
         }
 
         console.log(`[AI] Quota check passed: ${quotaCheck.remaining}/${quotaCheck.quota} remaining`);
-
-        // Track which identifier worked for usage increment later
-        const workingIdentifier = message.sender.lid &&
-            await whitelistManager.isWhitelisted(message.sender.lid) ?
-            message.sender.lid : message.sender.id;
 
         // Get user's assigned model (try lid first since @mentions use lid, fallback to id)
         let userModel = message.sender.lid ? await whitelistManager.getModel(message.sender.lid) : null;
@@ -409,7 +461,7 @@ Instead write conversationally for mobile.`;
     // Tool calling loop (max iterations to prevent infinite loops)
     let response;
     try {
-        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey);
+        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey, apiEndpoint);
         console.log(`[AI] Initial API response: stop_reason=${response.stop_reason}, content_blocks=${response.content?.length || 0}`);
     } catch (error) {
         console.error('[AI] API call failed:', error.message);
@@ -556,7 +608,7 @@ Instead write conversationally for mobile.`;
         });
 
         // Next API call with tool results
-        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey);
+        response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey, apiEndpoint);
     }
 
     // If we hit max iterations while AI still wants to use tools, force final response
@@ -579,7 +631,7 @@ Instead write conversationally for mobile.`;
         });
 
         // Get final response without tools
-        response = await callAIAPI(messages, [], systemPrompt, model, apiKey);
+        response = await callAIAPI(messages, [], systemPrompt, model, apiKey, apiEndpoint);
     }
 
     // Extract final text response
@@ -735,22 +787,37 @@ async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage,
 }
 
 // Call AI API (supports OpenAI and Anthropic)
-function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
-    return new Promise((resolve, reject) => {
-        // Determine provider from model
-        const provider = MODEL_PROVIDERS[model];
+function callAIAPI(messages, tools, systemPrompt, model, apiKey, apiEndpoint) {
+    return new Promise(async (resolve, reject) => {
+        try {
+            // Get model info and provider config dynamically
+            const settingsManager = require('../settingsManager');
 
-        if (!provider) {
-            reject(new Error(`Unknown model: ${model}. Please add it to MODEL_PROVIDERS mapping.`));
-            return;
-        }
+            // Get the model to determine its provider
+            const modelInfo = await settingsManager.getModelById(model);
+            if (!modelInfo) {
+                return reject(new Error(`Model ${model} not found in supported models`));
+            }
 
-        let endpoint, path, payload, headers;
+            const provider = modelInfo.provider;
+            if (!provider) {
+                return reject(new Error(`Model ${model} has no provider configured`));
+            }
 
-        if (provider === 'openai') {
-            // OpenAI API format - system prompt as first message
-            endpoint = apiEndpoint; // Use dynamic endpoint
-            path = OPENAI_PATH;
+            // Get provider configuration
+            const providerConfig = await settingsManager.getProviderConfig(provider);
+            if (!providerConfig) {
+                return reject(new Error(`Provider ${provider} configuration not found`));
+            }
+
+            const path = providerConfig.path;
+            const version = providerConfig.version;
+
+            let endpoint, payload, headers;
+
+            if (provider === 'openai') {
+                // OpenAI API format - system prompt as first message
+                endpoint = apiEndpoint; // Use dynamic endpoint
 
             // Add system message at the beginning
             const messagesWithSystem = [
@@ -784,7 +851,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
         } else if (provider === 'anthropic') {
             // Anthropic API format - system as separate field
             endpoint = apiEndpoint; // Use dynamic endpoint
-            path = ANTHROPIC_PATH;
+            // path already set from providerConfig
 
             const payloadObj = {
                 model: model,
@@ -802,7 +869,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
             headers = {
                 'Content-Type': 'application/json',
                 'x-api-key': apiKey,
-                'anthropic-version': ANTHROPIC_VERSION,
+                'anthropic-version': version || '2023-06-01', // Use dynamic version
                 'Content-Length': Buffer.byteLength(payload)
             };
         } else {
@@ -871,5 +938,8 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
 
         req.write(payload);
         req.end();
+        } catch (error) {
+            reject(new Error(`Failed to initialize API request: ${error.message}`));
+        }
     });
 }

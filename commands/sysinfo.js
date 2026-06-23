@@ -54,7 +54,7 @@ module.exports = {
         return info;
     },
     options: {
-        aliases: ['system', 'info', 'spec', 'specs'],
+        aliases: ['sys'],
         description: 'Display system information and specs',
         sectionName: 'Tools'
     }

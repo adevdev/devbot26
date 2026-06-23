@@ -11,17 +11,73 @@ let botStartTime = null;
 let messagesReceived = 0;
 let messagesSent = 0;
 
-// Intercept console.log to pipe to dashboard
+// Intercept console.log to pipe to dashboard (with strict filtering)
 const originalConsoleLog = console.log.bind(console);
+
+// Safe JSON stringify with circular reference handling
+function safeStringify(obj, maxLength = 1000) {
+    const seen = new WeakSet();
+    try {
+        const str = JSON.stringify(obj, (key, value) => {
+            if (typeof value === 'object' && value !== null) {
+                if (seen.has(value)) {
+                    return '[Circular]';
+                }
+                seen.add(value);
+            }
+            return value;
+        });
+        // Limit length to prevent massive outputs
+        return str.length > maxLength ? str.substring(0, maxLength) + '... (truncated)' : str;
+    } catch (e) {
+        return '[Object - cannot stringify]';
+    }
+}
+
 console.log = function(...args) {
-    const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : String(arg)).join(' ');
+    try {
+        const message = args.map(arg => {
+            if (typeof arg === 'object' && arg !== null) {
+                return safeStringify(arg);
+            }
+            return String(arg);
+        }).join(' ');
 
-    // Still log to PowerShell
-    originalConsoleLog(...args);
+        // Still log to PowerShell
+        originalConsoleLog(...args);
 
-    // Also send to dashboard
-    if (dashboard) {
-        dashboard.addLog('info', message);
+        // Block technical detail logs from dashboard
+        const blockPrefixes = [
+            '[AI] Command from',     // Detailed AI command logs
+            '[AI] Auto-adding',      // Auto-add details
+            '[AI] Got user data',    // User data fetch details
+            '[AI] Auto-added',       // Auto-add confirmation details
+            '[AI] Quota check',      // Quota check details
+            '[AI] User model',       // Model selection details
+            '[AI] Starting API',     // API call start
+            '[AI] Initial API',      // API response details
+            '[AI] Final text',       // Text extraction details
+            '[AI] Response',         // Response generation details
+            '[AI] Usage',            // Usage increment details
+            '[AI Settings]',         // Settings operations
+            '[Whitelist]',           // Whitelist checks
+            '[Quota]',               // Quota calculations
+            '[Memory]',              // Memory operations
+            '[DASHBOARD] Terminal',  // WebSocket events
+            '[AIADD]',              // User management details
+            'Synced'                 // Sync messages
+        ];
+
+        const shouldBlock = blockPrefixes.some(prefix => message.startsWith(prefix));
+
+        // Send to dashboard if NOT blocked
+        if (dashboard && !shouldBlock) {
+            dashboard.addLog('info', message);
+        }
+    } catch (error) {
+        // Fallback: if anything fails in logging, still log to console
+        originalConsoleLog('[LOG ERROR]', error.message);
+        originalConsoleLog(...args);
     }
 };
 
@@ -81,6 +137,9 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message } = context;
     const prefixes = wachan.settings.commandPrefixes || ['.'];
 
+    // Count messages
+    messagesReceived++;
+
     // Skip if no text (pure media without caption)
     if (!message.text) {
         next();
@@ -115,20 +174,8 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
         return;
     }
 
-    // Unknown command - check whitelist then route to AI
+    // Unknown command - route to AI (let AI command handle whitelist/auto-add logic)
     try {
-        // Check whitelist first
-        const whitelistManager = require('./whitelistManager');
-        // ponytail: check both id and lid since @mentions use lid
-        const isWhitelistedById = await whitelistManager.isWhitelisted(message.sender.id);
-        const isWhitelistedByLid = message.sender.lid ? await whitelistManager.isWhitelisted(message.sender.lid) : false;
-
-        if (!isWhitelistedById && !isWhitelistedByLid) {
-            // Silently ignore unknown commands from non-whitelisted users
-            // Don't reveal AI feature existence
-            return;
-        }
-
         // Import AI command module directly
         const aiCommandModule = require('./commands/ai.js');
 
@@ -142,7 +189,7 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
                 parameters: textWithoutPrefix.split(' '), // Full text as parameters
                 description: 'AI assistant (fallback)',
                 aliases: [],
-                skipWhitelistCheck: true // Already checked in fallback
+                skipWhitelistCheck: false // Let AI command do its own whitelist check (supports auto-add)
             },
             group: context.group
         };
@@ -183,6 +230,10 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
     const { message } = context;
 
     if (message.text && message.text.trim().toLowerCase() === 'dev') {
+        // Log dev command received
+        const senderName = message.sender.name || 'Unknown';
+        console.log(`[COMMAND] ${senderName}: dev`);
+
         const uptime = botStartTime ? Date.now() - botStartTime : 0;
         const uptimeSeconds = Math.floor(uptime / 1000);
         const uptimeMinutes = Math.floor(uptimeSeconds / 60);
@@ -205,7 +256,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         await context.reply(stats);
         messagesSent++;
 
-        console.log('[DEV] Statistics sent');
+        // Log removed - no need to log statistics sent
         return; // Don't pass to next handler
     }
 
@@ -330,16 +381,41 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
 
     console.log(`[EVAL] Executing: ${code}`);
 
+    // Save reference to intercepted console.log (NOT the original one)
+    const interceptedLog = console.log;
+
     try {
         // Capture console.log output
         const logs = [];
-        const originalLog = console.log;
+
+        // Safe stringify helper for EVAL output
+        const safeEvalStringify = (arg) => {
+            if (typeof arg === 'object' && arg !== null) {
+                const seen = new WeakSet();
+                try {
+                    return JSON.stringify(arg, (key, value) => {
+                        if (typeof value === 'object' && value !== null) {
+                            if (seen.has(value)) return '[Circular]';
+                            seen.add(value);
+                        }
+                        return value;
+                    }, 2);
+                } catch (e) {
+                    return '[Object - cannot stringify]';
+                }
+            }
+            return String(arg);
+        };
+
         console.log = (...args) => {
-            const msg = args.map(arg =>
-                typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
-            ).join(' ');
-            logs.push(msg);
-            originalLog(...args); // Still log to console
+            try {
+                const msg = args.map(arg => safeEvalStringify(arg)).join(' ');
+                logs.push(msg);
+                interceptedLog(...args); // Use intercepted log, not original
+            } catch (e) {
+                logs.push('[Error capturing log]');
+                interceptedLog('[EVAL Log Error]', e.message);
+            }
         };
 
         // Wrap code in async IIFE to support await
@@ -358,7 +434,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         }
 
         // Restore console.log
-        console.log = originalLog;
+        console.log = interceptedLog;
 
         // Handle async results (promises)
         if (result instanceof Promise) {
@@ -375,9 +451,7 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
 
         // Add return value if not undefined
         if (result !== undefined) {
-            const resultStr = typeof result === 'object'
-                ? JSON.stringify(result, null, 2)
-                : String(result);
+            const resultStr = safeEvalStringify(result);
 
             if (output) {
                 output += '\n→ ' + resultStr;
@@ -401,8 +475,8 @@ wachan.onReceive(wachan.messageType.text, async (context, next) => {
         messagesSent++;
 
     } catch (error) {
-        // Restore console.log on error
-        console.log = originalConsoleLog;
+        // Restore console.log on error (back to intercepted version, not original)
+        console.log = interceptedLog;
 
         await message.reply(error.message);
         messagesSent++;

@@ -19,20 +19,35 @@ class SettingsManager {
             defaultQuota: 100,
             defaultResetPeriod: 'perDay',
             defaultVisionModel: 'claude-sonnet-4.5', // Fallback model for vision requests
+            whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
             supportedModels: [
                 {
                     id: 'qwen3-coder-next',
                     displayName: 'Qwen3 Coder Next',
                     supportsVision: false,
-                    enabled: true
+                    enabled: true,
+                    provider: 'anthropic' // API format to use
                 },
                 {
                     id: 'claude-sonnet-4.5',
                     displayName: 'Claude Sonnet 4.5',
                     supportsVision: true,
-                    enabled: true
+                    enabled: true,
+                    provider: 'anthropic' // API format to use
                 }
             ],
+            // Provider configurations (API paths, versions, etc.)
+            providerConfigs: {
+                openai: {
+                    path: '/v1/chat/completions',
+                    description: 'OpenAI-compatible API format'
+                },
+                anthropic: {
+                    path: '/v1/messages',
+                    version: '2023-06-01',
+                    description: 'Anthropic Claude API format'
+                }
+            },
             // API Configuration (null = use .env fallback)
             apiEndpoint: null, // If set, overrides AI_API_ENDPOINT env var
             apiKey: null       // If set, overrides AI_API_KEY env var
@@ -164,6 +179,11 @@ class SettingsManager {
         return this.settings.defaultVisionModel || 'claude-sonnet-4.5';
     }
 
+    async getWhitelistMode() {
+        await this.initialize();
+        return this.settings.whitelistMode || 'strict';
+    }
+
     async getApiEndpoint() {
         await this.initialize();
         // Priority: settings → env var → default
@@ -174,6 +194,40 @@ class SettingsManager {
         await this.initialize();
         // Priority: settings → env var
         return this.settings.apiKey || process.env.AI_API_KEY || null;
+    }
+
+    async getProviderConfigs() {
+        await this.initialize();
+        return this.settings.providerConfigs || this.defaultSettings.providerConfigs;
+    }
+
+    async getProviderConfig(provider) {
+        await this.initialize();
+        const configs = this.settings.providerConfigs || this.defaultSettings.providerConfigs;
+        return configs[provider] || null;
+    }
+
+    async updateProviderConfig(provider, config) {
+        await this.initialize();
+
+        if (!this.settings.providerConfigs) {
+            this.settings.providerConfigs = { ...this.defaultSettings.providerConfigs };
+        }
+
+        // Validate provider exists
+        const validProviders = ['openai', 'anthropic'];
+        if (!validProviders.includes(provider)) {
+            throw new Error('Invalid provider. Must be "openai" or "anthropic"');
+        }
+
+        // Update config
+        this.settings.providerConfigs[provider] = {
+            ...this.settings.providerConfigs[provider],
+            ...config
+        };
+
+        await this.save();
+        console.log(`[AI Settings] Updated provider config: ${provider}`);
     }
 
     async getSupportedModels() {
@@ -196,7 +250,14 @@ class SettingsManager {
     async getModelById(modelId) {
         await this.initialize();
         const models = this.settings.supportedModels || this.defaultSettings.supportedModels;
-        return models.find(m => m.id === modelId);
+        const model = models.find(m => m.id === modelId);
+
+        // Add provider fallback for legacy models without provider field
+        if (model && !model.provider) {
+            model.provider = 'anthropic'; // Default to anthropic for legacy models
+        }
+
+        return model;
     }
 
     async addModel(model) {
@@ -205,6 +266,12 @@ class SettingsManager {
         // Validate required fields
         if (!model.id || !model.displayName) {
             throw new Error('Model must have id and displayName');
+        }
+
+        // Validate provider
+        const validProviders = ['openai', 'anthropic'];
+        if (model.provider && !validProviders.includes(model.provider)) {
+            throw new Error('Provider must be "openai" or "anthropic"');
         }
 
         // Check if model already exists
@@ -218,7 +285,8 @@ class SettingsManager {
             id: model.id,
             displayName: model.displayName,
             supportsVision: model.supportsVision || false,
-            enabled: model.enabled !== undefined ? model.enabled : true
+            enabled: model.enabled !== undefined ? model.enabled : true,
+            provider: model.provider || 'anthropic' // Default to anthropic format
         };
 
         if (!this.settings.supportedModels) {
@@ -253,6 +321,13 @@ class SettingsManager {
         }
         if (updates.enabled !== undefined) {
             this.settings.supportedModels[index].enabled = updates.enabled;
+        }
+        if (updates.provider !== undefined) {
+            const validProviders = ['openai', 'anthropic'];
+            if (!validProviders.includes(updates.provider)) {
+                throw new Error('Provider must be "openai" or "anthropic"');
+            }
+            this.settings.supportedModels[index].provider = updates.provider;
         }
 
         await this.save();
@@ -343,8 +418,16 @@ class SettingsManager {
             this.settings.apiKey = updates.apiKey;
         }
 
+        if (updates.whitelistMode !== undefined) {
+            const validModes = ['strict', 'auto'];
+            if (!validModes.includes(updates.whitelistMode)) {
+                throw new Error('Whitelist mode must be "strict" or "auto"');
+            }
+            this.settings.whitelistMode = updates.whitelistMode;
+        }
+
         await this.save();
-        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
+        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, whitelistMode=${this.settings.whitelistMode}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
     }
 }
 

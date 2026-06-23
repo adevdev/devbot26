@@ -590,7 +590,7 @@ async function loadAIDefaults() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode } = data.defaults;
 
             // Format display
             const modelDisplay = defaultModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
@@ -603,11 +603,20 @@ async function loadAIDefaults() {
             document.getElementById('defaultQuota').textContent = defaultQuota + ' requests';
             document.getElementById('defaultReset').textContent = resetDisplay;
             document.getElementById('defaultVisionModel').textContent = visionDisplay;
+
+            // Update whitelist mode
+            const mode = whitelistMode || 'strict';
+            document.getElementById('whitelistModeSelect').value = mode;
+            const modeDisplay = mode === 'strict' ?
+                '🔒 Strict Mode (Whitelist Only)' :
+                '🤖 Auto Mode (New Users Added)';
+            document.getElementById('whitelistModeDisplay').innerHTML = modeDisplay;
         } else {
             document.getElementById('defaultModel').textContent = 'Error loading';
             document.getElementById('defaultQuota').textContent = 'Error loading';
             document.getElementById('defaultReset').textContent = 'Error loading';
             document.getElementById('defaultVisionModel').textContent = 'Error loading';
+            document.getElementById('whitelistModeDisplay').textContent = 'Error loading';
         }
     } catch (error) {
         console.error('Error loading AI defaults:', error);
@@ -615,6 +624,43 @@ async function loadAIDefaults() {
         document.getElementById('defaultQuota').textContent = 'Error loading';
         document.getElementById('defaultReset').textContent = 'Error loading';
         document.getElementById('defaultVisionModel').textContent = 'Error loading';
+        document.getElementById('whitelistModeDisplay').textContent = 'Error loading';
+    }
+}
+
+// Update whitelist mode
+async function updateWhitelistMode() {
+    const mode = document.getElementById('whitelistModeSelect').value;
+
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                whitelistMode: mode
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const modeDisplay = mode === 'strict' ?
+                '🔒 Strict Mode (Whitelist Only)' :
+                '🤖 Auto Mode (New Users Added)';
+            document.getElementById('whitelistModeDisplay').innerHTML = modeDisplay;
+
+            const modeLabel = mode === 'strict' ? 'Strict (Whitelist Only)' : 'Auto (Add New Users)';
+            await showAlert('Success', `Whitelist mode changed to: ${modeLabel}`);
+        } else {
+            await showAlert('Error', 'Failed to update whitelist mode: ' + data.error);
+            // Revert select
+            loadAIDefaults();
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating whitelist mode: ' + error.message);
+        // Revert select
+        loadAIDefaults();
     }
 }
 
@@ -660,6 +706,9 @@ async function loadModels() {
 
         if (data.success && data.models.length > 0) {
             tbody.innerHTML = data.models.map(model => {
+                const providerBadge = model.provider === 'openai' ?
+                    '<span style="color: #0ff;">OpenAI</span>' :
+                    '<span style="color: #f0f;">Anthropic</span>';
                 const visionBadge = model.supportsVision ?
                     '<span style="color: #0f0;">✓ Yes</span>' :
                     '<span style="opacity: 0.5;">✗ No</span>';
@@ -671,6 +720,7 @@ async function loadModels() {
                     <tr>
                         <td><code>${model.id}</code></td>
                         <td>${model.displayName}</td>
+                        <td>${providerBadge}</td>
                         <td>${visionBadge}</td>
                         <td>${statusBadge}</td>
                         <td>
@@ -681,12 +731,12 @@ async function loadModels() {
                 `;
             }).join('');
         } else {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.6;">No models configured</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No models configured</td></tr>';
         }
     } catch (error) {
         console.error('Error loading models:', error);
         document.getElementById('modelsTableBody').innerHTML =
-            '<tr><td colspan="5" style="text-align: center; color: #f00;">Error loading models</td></tr>';
+            '<tr><td colspan="6" style="text-align: center; color: #f00;">Error loading models</td></tr>';
     }
 }
 
@@ -828,6 +878,7 @@ async function populateModelDropdown(selectElementId, options = {}) {
 function showAddModelModal() {
     document.getElementById('addModelId').value = '';
     document.getElementById('addModelDisplayName').value = '';
+    document.getElementById('addModelProvider').value = 'anthropic';
     document.getElementById('addModelSupportsVision').checked = false;
     document.getElementById('addModelEnabled').checked = true;
     document.getElementById('addModelModal').showModal();
@@ -846,6 +897,7 @@ async function showEditModelModal(modelId) {
             if (model) {
                 document.getElementById('editModelId').value = model.id;
                 document.getElementById('editModelDisplayName').value = model.displayName;
+                document.getElementById('editModelProvider').value = model.provider || 'anthropic';
                 document.getElementById('editModelSupportsVision').checked = model.supportsVision;
                 document.getElementById('editModelEnabled').checked = model.enabled;
                 document.getElementById('editModelModal').showModal();
@@ -944,7 +996,7 @@ function renderWhitelist(users) {
                 <td style="text-align: center; color: ${usageColor};">${usageCount}/${quota}</td>
                 <td style="text-align: center;"><small>${resetDisplay}</small></td>
                 <td>
-                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}', ${encodedQuota}, '${encodedResetPeriod}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}', ${encodedQuota}, '${encodedResetPeriod}', ${user.usageCount || 0})" style="margin-right: 0.5rem;">Edit</button>
                     <button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button>
                 </td>
             </tr>
@@ -992,7 +1044,7 @@ async function showAddWhitelistModal() {
 }
 
 // Show edit whitelist modal
-async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay') {
+async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay', usageCount = 0) {
     const number = decodeURIComponent(encodedNumber);
     const model = decodeURIComponent(encodedModel);
     const pushName = encodedPushName ? decodeURIComponent(encodedPushName) : '';
@@ -1001,6 +1053,7 @@ async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushNa
     document.getElementById('editWhitelistNumber').value = number;
     document.getElementById('editWhitelistPushName').value = pushName;
     document.getElementById('editWhitelistQuota').value = quota;
+    document.getElementById('editWhitelistUsage').value = usageCount;
     document.getElementById('editWhitelistResetPeriod').value = resetPeriod;
 
     // Populate model dropdown dynamically
@@ -1086,6 +1139,7 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     const pushName = document.getElementById('editWhitelistPushName').value.trim();
     const model = document.getElementById('editWhitelistModel').value;
     const quota = parseInt(document.getElementById('editWhitelistQuota').value);
+    const usageCount = parseInt(document.getElementById('editWhitelistUsage').value);
     const resetPeriod = document.getElementById('editWhitelistResetPeriod').value;
 
     if (!newNumber) {
@@ -1105,6 +1159,12 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
         return;
     }
 
+    // Validate usage count
+    if (isNaN(usageCount) || usageCount < 0 || usageCount > quota) {
+        await showAlert('Error', `Usage count must be between 0 and ${quota}`);
+        return;
+    }
+
     try {
         const response = await fetch(`/api/whitelist/${encodeURIComponent(oldNumber)}`, {
             method: 'PUT',
@@ -1115,6 +1175,7 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
                 model,
                 pushName: pushName || null,
                 quota,
+                usageCount,
                 resetPeriod
             })
         });
@@ -1185,6 +1246,7 @@ document.getElementById('addModelCancel').addEventListener('click', () => {
 document.getElementById('addModelSubmit').addEventListener('click', async () => {
     const id = document.getElementById('addModelId').value.trim();
     const displayName = document.getElementById('addModelDisplayName').value.trim();
+    const provider = document.getElementById('addModelProvider').value;
     const supportsVision = document.getElementById('addModelSupportsVision').checked;
     const enabled = document.getElementById('addModelEnabled').checked;
 
@@ -1201,6 +1263,7 @@ document.getElementById('addModelSubmit').addEventListener('click', async () => 
             body: JSON.stringify({
                 id,
                 displayName,
+                provider,
                 supportsVision,
                 enabled
             })
@@ -1228,6 +1291,7 @@ document.getElementById('editModelCancel').addEventListener('click', () => {
 document.getElementById('editModelSubmit').addEventListener('click', async () => {
     const id = document.getElementById('editModelId').value;
     const displayName = document.getElementById('editModelDisplayName').value.trim();
+    const provider = document.getElementById('editModelProvider').value;
     const supportsVision = document.getElementById('editModelSupportsVision').checked;
     const enabled = document.getElementById('editModelEnabled').checked;
 
@@ -1243,6 +1307,7 @@ document.getElementById('editModelSubmit').addEventListener('click', async () =>
             credentials: 'same-origin',
             body: JSON.stringify({
                 displayName,
+                provider,
                 supportsVision,
                 enabled
             })

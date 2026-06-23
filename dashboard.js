@@ -655,7 +655,7 @@ class BotDashboard {
         this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { number } = req.params;
-                const { model, newNumber, pushName, quota, resetPeriod } = req.body;
+                const { model, newNumber, pushName, quota, usageCount, resetPeriod } = req.body;
 
                 // Validate model
                 const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
@@ -678,6 +678,10 @@ class BotDashboard {
                 // Validate quota
                 const selectedQuota = quota && typeof quota === 'number' && quota >= 1 && quota <= 10000 ? quota : 100;
 
+                // Validate usageCount
+                const selectedUsageCount = usageCount !== undefined && typeof usageCount === 'number' &&
+                                          usageCount >= 0 && usageCount <= selectedQuota ? usageCount : 0;
+
                 // Validate resetPeriod
                 const validResetPeriods = ['per5Hours', 'perDay', 'perMonth'];
                 const selectedResetPeriod = resetPeriod && validResetPeriods.includes(resetPeriod) ? resetPeriod : 'perDay';
@@ -696,6 +700,11 @@ class BotDashboard {
                     // Add new number with all settings
                     const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
 
+                    // Update usage count if provided
+                    if (selectedUsageCount > 0) {
+                        await whitelistManager.setUsageCount(normalized, selectedUsageCount);
+                    }
+
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
                     const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
                     this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized}${logName} (${model}, ${selectedQuota}/${resetLabel})`);
@@ -706,15 +715,19 @@ class BotDashboard {
                         model,
                         pushName: sanitizedPushName,
                         quota: selectedQuota,
+                        usageCount: selectedUsageCount,
                         resetPeriod: selectedResetPeriod
                     });
                 } else {
                     // Just update settings for same number
                     await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
 
+                    // Update usage count
+                    await whitelistManager.setUsageCount(decodedOldNumber, selectedUsageCount);
+
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
                     const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
-                    this.addLog('success', `Updated ${decodedOldNumber}${logName}: ${model}, ${selectedQuota}/${resetLabel}`);
+                    this.addLog('success', `Updated ${decodedOldNumber}${logName}: ${model}, ${selectedQuota}/${resetLabel}, usage: ${selectedUsageCount}`);
                     res.json({
                         success: true,
                         message: 'Whitelist entry updated',
@@ -722,6 +735,7 @@ class BotDashboard {
                         model,
                         pushName: sanitizedPushName,
                         quota: selectedQuota,
+                        usageCount: selectedUsageCount,
                         resetPeriod: selectedResetPeriod
                     });
                 }
@@ -763,7 +777,8 @@ class BotDashboard {
                         defaultModel: defaults.defaultModel,
                         defaultQuota: defaults.defaultQuota,
                         defaultResetPeriod: defaults.defaultResetPeriod,
-                        defaultVisionModel: defaults.defaultVisionModel || 'claude-sonnet-4.5'
+                        defaultVisionModel: defaults.defaultVisionModel || 'claude-sonnet-4.5',
+                        whitelistMode: defaults.whitelistMode || 'strict'
                     }
                 });
             } catch (error) {
@@ -775,21 +790,27 @@ class BotDashboard {
         // API: Update AI default settings
         this.app.put('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = req.body;
+                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode } = req.body;
 
                 const settingsManager = require('./settingsManager');
                 await settingsManager.updateSettings({
                     defaultModel,
                     defaultQuota,
                     defaultResetPeriod,
-                    defaultVisionModel
+                    defaultVisionModel,
+                    whitelistMode
                 });
 
                 const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
                 const resetLabel = defaultResetPeriod === 'per5Hours' ? '5h' :
                                   defaultResetPeriod === 'perDay' ? 'day' : 'month';
 
-                this.addLog('success', `Updated AI defaults: ${modelName}, ${defaultQuota}/${resetLabel}`);
+                let logMessage = `Updated AI defaults: ${modelName}, ${defaultQuota}/${resetLabel}`;
+                if (whitelistMode) {
+                    logMessage += `, whitelist: ${whitelistMode}`;
+                }
+
+                this.addLog('success', logMessage);
                 res.json({
                     success: true,
                     message: 'Default settings updated',
@@ -797,7 +818,8 @@ class BotDashboard {
                         defaultModel,
                         defaultQuota,
                         defaultResetPeriod,
-                        defaultVisionModel
+                        defaultVisionModel,
+                        whitelistMode
                     }
                 });
             } catch (error) {
@@ -825,7 +847,7 @@ class BotDashboard {
         // API: Add new model
         this.app.post('/api/ai-settings/models', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { id, displayName, supportsVision, enabled } = req.body;
+                const { id, displayName, provider, supportsVision, enabled } = req.body;
 
                 if (!id || !displayName) {
                     return res.status(400).json({ success: false, error: 'Model ID and display name are required' });
@@ -835,11 +857,12 @@ class BotDashboard {
                 const newModel = await settingsManager.addModel({
                     id,
                     displayName,
+                    provider: provider || 'anthropic',
                     supportsVision: supportsVision || false,
                     enabled: enabled !== undefined ? enabled : true
                 });
 
-                this.addLog('success', `Added AI model: ${displayName} (${id})`);
+                this.addLog('success', `Added AI model: ${displayName} (${id}, ${provider || 'anthropic'})`);
                 res.json({
                     success: true,
                     message: 'Model added successfully',
@@ -855,11 +878,12 @@ class BotDashboard {
         this.app.put('/api/ai-settings/models/:id', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { id } = req.params;
-                const { displayName, supportsVision, enabled } = req.body;
+                const { displayName, provider, supportsVision, enabled } = req.body;
 
                 const settingsManager = require('./settingsManager');
                 const updatedModel = await settingsManager.updateModel(id, {
                     displayName,
+                    provider,
                     supportsVision,
                     enabled
                 });
@@ -1048,9 +1072,30 @@ class BotDashboard {
 
         // Broadcast to clients (censored for non-authenticated)
         this.io.sockets.sockets.forEach((socket) => {
-            const isAuthenticated = socket.request.session && socket.request.session.authenticated === true;
-            const logToSend = isAuthenticated ? log : this.censorLog(log);
-            socket.emit('log', logToSend);
+            try {
+                const isAuthenticated = socket.request.session && socket.request.session.authenticated === true;
+                const logToSend = isAuthenticated ? log : this.censorLog(log);
+
+                // Ensure log is JSON-serializable before emitting
+                JSON.stringify(logToSend); // Test if serializable
+
+                socket.emit('log', logToSend);
+            } catch (error) {
+                // Log failed to emit (non-serializable data)
+                console.error('[DASHBOARD] Failed to emit log:', error.message);
+                // Try sending error log instead
+                try {
+                    socket.emit('log', {
+                        timestamp: new Date().toISOString(),
+                        type: 'error',
+                        message: '[Log Error] Data not serializable',
+                        data: {}
+                    });
+                } catch (e) {
+                    // Even error log failed, give up for this socket
+                    console.error('[DASHBOARD] Socket emit completely failed');
+                }
+            }
         });
     }
     
