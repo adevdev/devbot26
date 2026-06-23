@@ -4,6 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DevBot26 AI Assistant</title>
+
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+    <link rel="manifest" href="/site.webmanifest">
+
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <style>
         * {
@@ -36,6 +43,15 @@
             font-size: 1.2rem;
             text-transform: uppercase;
             letter-spacing: 2px;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .header h1 img {
+            height: 2rem;
+            width: auto;
+            display: block;
         }
 
         .tabs {
@@ -443,7 +459,7 @@
 <body>
     <div class="header">
         <div>
-            <h1>🤖 DevBot26 Terminal</h1>
+            <h1><img src="/logo.png" alt="DevBot26 Logo"> DevBot26 Terminal</h1>
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('terminal', this)">Terminal</button>
                 <button class="tab-btn" onclick="switchTab('commands', this)">Commands</button>
