@@ -439,8 +439,15 @@ function switchTab(tabName, buttonElement) {
         return;
     }
 
+    // Update URL hash
+    if (tabName === 'ai-settings') {
+        window.location.hash = 'ai-settings/defaults';
+    } else {
+        window.location.hash = tabName;
+    }
+
     // Update tab buttons
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.querySelectorAll('.header .tab-btn').forEach(btn => btn.classList.remove('active'));
     buttonElement.classList.add('active');
 
     // Update tab content
@@ -472,6 +479,9 @@ function switchTab(tabName, buttonElement) {
 
 // Switch AI Settings sub-tabs
 function switchAiSubTab(subTabName, buttonElement) {
+    // Update URL hash
+    window.location.hash = `ai-settings/${subTabName}`;
+
     // Update sub-tab buttons
     document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
     buttonElement.classList.add('active');
@@ -1494,7 +1504,102 @@ document.getElementById('editRoomSubmit').addEventListener('click', async () => 
     }
 });
 
-// Add whitelist modal handlers
+// Restore tab state from URL hash on page load
+function restoreTabFromURL() {
+    const hash = window.location.hash.slice(1); // Remove '#'
+
+    if (!hash) {
+        // Default to terminal tab
+        return;
+    }
+
+    const parts = hash.split('/');
+    const mainTab = parts[0];
+    const subTab = parts[1];
+
+    // Find and click the appropriate main tab button
+    const tabButtons = document.querySelectorAll('.header .tab-btn');
+    let targetButton = null;
+
+    tabButtons.forEach(btn => {
+        const onclickAttr = btn.getAttribute('onclick');
+        if (onclickAttr && onclickAttr.includes(`'${mainTab}'`)) {
+            targetButton = btn;
+        }
+    });
+
+    if (targetButton) {
+        // Simulate tab click
+        if (mainTab === 'commands' || mainTab === 'rooms' || mainTab === 'ai-settings') {
+            // Check auth first
+            if (!isAuthenticated) {
+                console.log('[Tab Restore] Authentication required for', mainTab);
+                return;
+            }
+        }
+
+        // Manually switch tab without using onclick
+        document.querySelectorAll('.header .tab-btn').forEach(btn => btn.classList.remove('active'));
+        targetButton.classList.add('active');
+
+        document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+        document.getElementById(`tab-${mainTab}`).classList.add('active');
+
+        // Load data
+        if (mainTab === 'commands') {
+            loadCommands();
+        } else if (mainTab === 'rooms') {
+            loadRooms();
+        } else if (mainTab === 'ai-settings') {
+            loadAIDefaults();
+            loadApiConfig();
+            loadModels();
+            loadMemory();
+            loadWhitelist();
+
+            // Handle subtab
+            if (subTab) {
+                const subTabButtons = document.querySelectorAll('#tab-ai-settings .tab-btn');
+                let targetSubButton = null;
+
+                subTabButtons.forEach(btn => {
+                    const onclickAttr = btn.getAttribute('onclick');
+                    if (onclickAttr && onclickAttr.includes(`'${subTab}'`)) {
+                        targetSubButton = btn;
+                    }
+                });
+
+                if (targetSubButton) {
+                    document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
+                    targetSubButton.classList.add('active');
+
+                    document.querySelectorAll('.ai-subtab-content').forEach(content => content.style.display = 'none');
+                    const targetSubTab = document.getElementById(`ai-subtab-${subTab}`);
+                    if (targetSubTab) {
+                        targetSubTab.style.display = 'block';
+                    }
+                }
+            } else {
+                // Default to first subtab
+                document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
+                const firstBtn = document.querySelector('#tab-ai-settings .tab-btn');
+                if (firstBtn) firstBtn.classList.add('active');
+
+                document.querySelectorAll('.ai-subtab-content').forEach(content => content.style.display = 'none');
+                const firstSubTab = document.getElementById('ai-subtab-defaults');
+                if (firstSubTab) firstSubTab.style.display = 'block';
+            }
+        }
+    }
+}
+
+// Call restore on page load (after login check)
+window.addEventListener('load', () => {
+    // Wait a bit for auth check to complete
+    setTimeout(() => {
+        restoreTabFromURL();
+    }, 100);
+});
 document.getElementById('addWhitelistCancel').addEventListener('click', () => {
     document.getElementById('addWhitelistModal').close();
 });
