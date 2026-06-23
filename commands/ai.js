@@ -271,7 +271,7 @@ module.exports = {
     },
     options: {
         aliases: ['ask', 'chat'],
-        description: 'Ask AI assistant (whitelist only)',
+        description: 'Ask AI assistan)',
         sectionName: 'AI',
         fallback: true // Mark this as fallback command
     }
@@ -303,7 +303,8 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     });
 
     // System prompt for WhatsApp formatting
-    let systemPrompt = `You are a helpful AI assistant responding via WhatsApp.
+    const aiIdentity = await settingsManager.getAiIdentity();
+    let systemPrompt = `${aiIdentity}
 
 IMPORTANT CONTEXT:
 Current date: ${currentDate}

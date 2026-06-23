@@ -545,7 +545,7 @@ class BotDashboard {
         this.app.get('/api/memory', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const rooms = await memoryManager.getAllRooms();
-                res.json({ success: true, rooms });
+                res.json({ success: true, memories: rooms });
             } catch (error) {
                 this.addLog('error', `Failed to get memory rooms: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
@@ -778,7 +778,9 @@ class BotDashboard {
                         defaultQuota: defaults.defaultQuota,
                         defaultResetPeriod: defaults.defaultResetPeriod,
                         defaultVisionModel: defaults.defaultVisionModel || 'claude-sonnet-4.5',
-                        whitelistMode: defaults.whitelistMode || 'strict'
+                        whitelistMode: defaults.whitelistMode || 'strict',
+                        aiIdentity: defaults.aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.',
+                        maxMemoryMessages: defaults.maxMemoryMessages || 100
                     }
                 });
             } catch (error) {
@@ -790,7 +792,7 @@ class BotDashboard {
         // API: Update AI default settings
         this.app.put('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode } = req.body;
+                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = req.body;
 
                 const settingsManager = require('./settingsManager');
                 await settingsManager.updateSettings({
@@ -798,7 +800,9 @@ class BotDashboard {
                     defaultQuota,
                     defaultResetPeriod,
                     defaultVisionModel,
-                    whitelistMode
+                    whitelistMode,
+                    aiIdentity,
+                    maxMemoryMessages
                 });
 
                 const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
@@ -808,6 +812,12 @@ class BotDashboard {
                 let logMessage = `Updated AI defaults: ${modelName}, ${defaultQuota}/${resetLabel}`;
                 if (whitelistMode) {
                     logMessage += `, whitelist: ${whitelistMode}`;
+                }
+                if (aiIdentity) {
+                    logMessage += `, identity updated`;
+                }
+                if (maxMemoryMessages) {
+                    logMessage += `, max memory: ${maxMemoryMessages}`;
                 }
 
                 this.addLog('success', logMessage);
@@ -819,7 +829,9 @@ class BotDashboard {
                         defaultQuota,
                         defaultResetPeriod,
                         defaultVisionModel,
-                        whitelistMode
+                        whitelistMode,
+                        aiIdentity,
+                        maxMemoryMessages
                     }
                 });
             } catch (error) {

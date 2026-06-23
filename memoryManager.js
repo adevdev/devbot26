@@ -1,13 +1,22 @@
 const fs = require('fs').promises;
 const path = require('path');
 const storageHelper = require('./storageHelper');
+const settingsManager = require('./settingsManager');
 
 const MEMORY_DIR = path.join(__dirname, 'memory');
-const MAX_MESSAGES = 100; // 50 exchanges (user + assistant pairs)
 
 class MemoryManager {
     constructor() {
         this.ensureMemoryDir();
+    }
+
+    async getMaxMessages() {
+        try {
+            return await settingsManager.getMaxMemoryMessages();
+        } catch (error) {
+            console.warn('[Memory] Failed to get max messages setting, using default 100');
+            return 100;
+        }
     }
 
     getStorageType() {
@@ -84,6 +93,7 @@ class MemoryManager {
 
     async saveMessageToFile(roomId, role, content, metadata = {}) {
         try {
+            const MAX_MESSAGES = await this.getMaxMessages();
             const messages = await this.loadMemoryFromFile(roomId);
 
             // Add new message
@@ -113,6 +123,7 @@ class MemoryManager {
 
     async saveMessageToMongoDB(roomId, role, content, metadata = {}) {
         try {
+            const MAX_MESSAGES = await this.getMaxMessages();
             const mongoClient = await storageHelper.getMongoClient();
             const db = mongoClient.db();
             const collection = db.collection('memories');

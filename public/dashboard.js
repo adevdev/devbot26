@@ -451,11 +451,34 @@ function switchTab(tabName, buttonElement) {
     if (tabName === 'commands') {
         loadCommands();
     } else if (tabName === 'ai-settings') {
+        // Initialize first sub-tab as active
+        document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
+        const firstSubTabBtn = document.querySelector('#tab-ai-settings .tab-btn');
+        if (firstSubTabBtn) firstSubTabBtn.classList.add('active');
+
+        document.querySelectorAll('.ai-subtab-content').forEach(content => content.style.display = 'none');
+        const firstSubTab = document.getElementById('ai-subtab-defaults');
+        if (firstSubTab) firstSubTab.style.display = 'block';
+
         loadAIDefaults();
         loadApiConfig();
         loadModels();
+        loadMemory();
         loadWhitelist();
     }
+}
+
+// Switch AI Settings sub-tabs
+function switchAiSubTab(subTabName, buttonElement) {
+    // Update sub-tab buttons
+    document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
+    buttonElement.classList.add('active');
+
+    // Update sub-tab content
+    document.querySelectorAll('.ai-subtab-content').forEach(content => {
+        content.style.display = 'none';
+    });
+    document.getElementById(`ai-subtab-${subTabName}`).style.display = 'block';
 }
 
 // Load commands list
@@ -590,7 +613,7 @@ async function loadAIDefaults() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = data.defaults;
 
             // Format display
             const modelDisplay = defaultModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
@@ -603,6 +626,16 @@ async function loadAIDefaults() {
             document.getElementById('defaultQuota').textContent = defaultQuota + ' requests';
             document.getElementById('defaultReset').textContent = resetDisplay;
             document.getElementById('defaultVisionModel').textContent = visionDisplay;
+            document.getElementById('aiIdentityDisplay').textContent = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
+
+            // Update max memory
+            const maxMemory = maxMemoryMessages || 100;
+            if (document.getElementById('maxMemoryMessages')) {
+                document.getElementById('maxMemoryMessages').value = maxMemory;
+            }
+            if (document.getElementById('currentMaxMemory')) {
+                document.getElementById('currentMaxMemory').textContent = maxMemory;
+            }
 
             // Update whitelist mode
             const mode = whitelistMode || 'strict';
@@ -673,7 +706,7 @@ async function showEditDefaultsModal() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, aiIdentity } = data.defaults;
 
             // Populate model dropdowns dynamically
             await populateModelDropdown('editDefaultModel', { selectedValue: defaultModel });
@@ -684,6 +717,7 @@ async function showEditDefaultsModal() {
 
             document.getElementById('editDefaultQuota').value = defaultQuota;
             document.getElementById('editDefaultResetPeriod').value = defaultResetPeriod;
+            document.getElementById('editAiIdentity').value = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
 
             document.getElementById('editDefaultsModal').showModal();
         } else {
@@ -950,6 +984,160 @@ async function loadWhitelist() {
     }
 }
 
+// Load memory list
+async function loadMemory() {
+    try {
+        const response = await fetch('/api/memory', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            renderMemory(data.memories);
+        } else {
+            renderMemoryError('Failed to load memory');
+        }
+    } catch (error) {
+        renderMemoryError('Error loading memory: ' + error.message);
+    }
+}
+
+// Render memory table
+function renderMemory(memories) {
+    const tbody = document.getElementById('memoryTableBody');
+
+    if (!memories || memories.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No conversation memory stored</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = memories.map(mem => {
+        const lastUpdated = new Date(mem.lastUpdated).toLocaleString();
+        return `
+            <tr>
+                <td style="font-family: monospace; font-size: 0.85rem;">${mem.roomId}</td>
+                <td>${mem.messageCount} messages</td>
+                <td style="opacity: 0.8;">${lastUpdated}</td>
+                <td>
+                    <button class="btn btn-small" onclick="viewMemory('${mem.roomId}')">View</button>
+                    <button class="btn btn-small danger" onclick="clearMemory('${mem.roomId}')">Clear</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function renderMemoryError(message) {
+    const tbody = document.getElementById('memoryTableBody');
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #f00;">${message}</td></tr>`;
+}
+
+// View specific memory
+async function viewMemory(roomId) {
+    try {
+        const response = await fetch(`/api/memory/${encodeURIComponent(roomId)}`, {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const messages = data.messages || [];
+            const messageText = messages.map((msg, i) =>
+                `[${i + 1}] ${msg.role}: ${msg.content.substring(0, 100)}${msg.content.length > 100 ? '...' : ''}`
+            ).join('\n');
+
+            await showAlert('Memory: ' + roomId, messageText || 'No messages');
+        } else {
+            await showAlert('Error', 'Failed to load memory details');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error loading memory: ' + error.message);
+    }
+}
+
+// Clear specific memory
+async function clearMemory(roomId) {
+    const confirmed = await showConfirm('Clear Memory', `Clear conversation memory for ${roomId}?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/memory/${encodeURIComponent(roomId)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            await showAlert('Success', 'Memory cleared');
+            loadMemory();
+        } else {
+            await showAlert('Error', 'Failed to clear memory');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error clearing memory: ' + error.message);
+    }
+}
+
+// Clear all memory
+async function clearAllMemory() {
+    const confirmed = await showConfirm('Clear All Memory', 'This will clear ALL conversation memory. Continue?');
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/memory', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success && data.memories) {
+            let cleared = 0;
+            for (const mem of data.memories) {
+                const res = await fetch(`/api/memory/${encodeURIComponent(mem.roomId)}`, {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                });
+                if (res.ok) cleared++;
+            }
+            await showAlert('Success', `Cleared ${cleared} conversation memories`);
+            loadMemory();
+        } else {
+            await showAlert('Error', 'Failed to fetch memory list');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error clearing all memory: ' + error.message);
+    }
+}
+
+// Update max memory messages setting
+async function updateMaxMemory() {
+    const maxMemory = parseInt(document.getElementById('maxMemoryMessages').value);
+
+    if (isNaN(maxMemory) || maxMemory < 10 || maxMemory > 500) {
+        await showAlert('Error', 'Max memory must be between 10 and 500');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ maxMemoryMessages: maxMemory })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('currentMaxMemory').textContent = maxMemory;
+            await showAlert('Success', `Max memory updated to ${maxMemory} messages`);
+        } else {
+            await showAlert('Error', 'Failed to update max memory');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating max memory: ' + error.message);
+    }
+}
+
 // Render whitelist table
 function renderWhitelist(users) {
     const tbody = document.getElementById('whitelistTableBody');
@@ -1204,10 +1392,17 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
     const defaultQuota = parseInt(document.getElementById('editDefaultQuota').value);
     const defaultResetPeriod = document.getElementById('editDefaultResetPeriod').value;
     const defaultVisionModel = document.getElementById('editDefaultVisionModel').value;
+    const aiIdentity = document.getElementById('editAiIdentity').value.trim();
 
     // Validate quota
     if (isNaN(defaultQuota) || defaultQuota < 1 || defaultQuota > 10000) {
         await showAlert('Error', 'Quota must be between 1 and 10000');
+        return;
+    }
+
+    // Validate AI identity
+    if (!aiIdentity) {
+        await showAlert('Error', 'AI Identity cannot be empty');
         return;
     }
 
@@ -1220,7 +1415,8 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
                 defaultModel,
                 defaultQuota,
                 defaultResetPeriod,
-                defaultVisionModel
+                defaultVisionModel,
+                aiIdentity
             })
         });
 

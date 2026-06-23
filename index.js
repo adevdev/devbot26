@@ -131,11 +131,12 @@ dashboard.onStopBot(async () => {
 // Load all commands from folder FIRST
 commands.fromFolder('./commands');
 
-// Fallback handler for unknown commands -> route to AI
+// Fallback handler: Private messages -> AI by default, Groups -> AI only for unknown commands with prefix
 // Registered AFTER loading commands so we can check if command exists
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
-    const { message } = context;
+    const { message, group } = context;
     const prefixes = wachan.settings.commandPrefixes || ['.'];
+    const isGroup = !!group; // true if group message
 
     // Count messages
     messagesReceived++;
@@ -155,41 +156,67 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
         }
     }
 
-    if (!usedPrefix) {
+    // If prefix found, check if it's a valid command
+    if (usedPrefix) {
+        const textWithoutPrefix = message.text.slice(usedPrefix.length);
+        const parts = textWithoutPrefix.split(' ');
+        const commandName = parts[0].toLowerCase();
+        const commandInfo = commands.getCommandInfo(commandName);
+
+        if (commandInfo) {
+            // Valid command exists, let it handle normally
+            next();
+            return;
+        }
+
+        // Unknown command with prefix -> route to AI
+        try {
+            const aiCommandModule = require('./commands/ai.js');
+            const aiContext = {
+                message: message,
+                command: {
+                    prefix: usedPrefix,
+                    name: 'ai',
+                    usedName: 'ai',
+                    parameters: textWithoutPrefix.split(' '),
+                    description: 'AI assistant (fallback)',
+                    aliases: [],
+                    skipWhitelistCheck: false
+                },
+                group: context.group
+            };
+
+            const response = await aiCommandModule.response(aiContext, () => {});
+            if (response) {
+                await message.reply(response);
+                messagesSent++;
+            }
+        } catch (error) {
+            console.error('[AI Fallback] Error:', error.message);
+        }
+        return; // Don't call next()
+    }
+
+    // No prefix found
+    if (isGroup) {
+        // In groups, require prefix for commands
         next();
         return;
     }
 
-    // Extract command name
-    const textWithoutPrefix = message.text.slice(usedPrefix.length);
-    const parts = textWithoutPrefix.split(' ');
-    const commandName = parts[0].toLowerCase();
-
-    // Check if command exists (now commands are loaded)
-    const commandInfo = commands.getCommandInfo(commandName);
-
-    if (commandInfo) {
-        // Command exists, let it handle normally
-        next();
-        return;
-    }
-
-    // Unknown command - route to AI (let AI command handle whitelist/auto-add logic)
+    // Private message without prefix -> route to AI
     try {
-        // Import AI command module directly
         const aiCommandModule = require('./commands/ai.js');
-
-        // Reconstruct context for AI command
         const aiContext = {
             message: message,
             command: {
-                prefix: usedPrefix,
+                prefix: '',
                 name: 'ai',
                 usedName: 'ai',
-                parameters: textWithoutPrefix.split(' '), // Full text as parameters
-                description: 'AI assistant (fallback)',
+                parameters: [message.text], // Entire message as parameter
+                description: 'AI assistant (private chat)',
                 aliases: [],
-                skipWhitelistCheck: false // Let AI command do its own whitelist check (supports auto-add)
+                skipWhitelistCheck: false
             },
             group: context.group
         };
@@ -200,10 +227,8 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
             messagesSent++;
         }
     } catch (error) {
-        console.error('[AI Fallback] Error:', error.message);
-        // Silently fail - don't send error to user for unknown commands
+        console.error('[AI Private] Error:', error.message);
     }
-
     // Don't call next() - we handled it
 });
 

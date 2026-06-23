@@ -6,6 +6,7 @@ data/*
 data
 *.log
 .env
+.env.bp
 public/dashboard.min.js
 public/dashboard.min.html
 .claude

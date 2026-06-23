@@ -20,6 +20,8 @@ class SettingsManager {
             defaultResetPeriod: 'perDay',
             defaultVisionModel: 'claude-sonnet-4.5', // Fallback model for vision requests
             whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
+            aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality
+            maxMemoryMessages: 100, // Max messages stored per chat for AI context
             supportedModels: [
                 {
                     id: 'qwen3-coder-next',
@@ -182,6 +184,30 @@ class SettingsManager {
     async getWhitelistMode() {
         await this.initialize();
         return this.settings.whitelistMode || 'strict';
+    }
+
+    async getAiIdentity() {
+        await this.initialize();
+        return this.settings.aiIdentity || this.defaultSettings.aiIdentity;
+    }
+
+    async setAiIdentity(identity) {
+        await this.initialize();
+        this.settings.aiIdentity = identity;
+        await this.save();
+        console.log('[AI Settings] Updated AI identity');
+    }
+
+    async getMaxMemoryMessages() {
+        await this.initialize();
+        return this.settings.maxMemoryMessages || this.defaultSettings.maxMemoryMessages;
+    }
+
+    async setMaxMemoryMessages(maxMessages) {
+        await this.initialize();
+        this.settings.maxMemoryMessages = maxMessages;
+        await this.save();
+        console.log('[AI Settings] Updated max memory messages:', maxMessages);
     }
 
     async getApiEndpoint() {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DevBot26 Terminal</title>
+    <title>DevBot26 AI Assistant</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <style>
         * {
@@ -493,122 +493,193 @@
     <div id="tab-ai-settings" class="tab-content">
         <div class="commands-container">
             <div class="commands-header">
-                <h2 style="color: #0f0; font-size: 1rem;">AI Settings & Whitelist</h2>
-                <button class="btn" onclick="showAddWhitelistModal()">+ Add User</button>
+                <h2 style="color: #0f0; font-size: 1rem;">AI Settings</h2>
             </div>
 
-            <!-- Default Settings Panel -->
-            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h3 style="color: #0f0; margin: 0;">Default Settings</h3>
-                    <button class="btn btn-small" onclick="showEditDefaultsModal()">Edit Defaults</button>
-                </div>
-                <div id="defaultSettingsDisplay" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem;">
-                    <div>
-                        <small style="opacity: 0.7;">Default Model:</small>
-                        <div id="defaultModel" style="color: #0f0; font-weight: bold;">Loading...</div>
+            <!-- Sub-tabs for AI Settings -->
+            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #0f0; padding-bottom: 0.5rem;">
+                <button class="tab-btn active" onclick="switchAiSubTab('defaults', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Defaults</button>
+                <button class="tab-btn" onclick="switchAiSubTab('api', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">API Config</button>
+                <button class="tab-btn" onclick="switchAiSubTab('models', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Models</button>
+                <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Memory</button>
+                <button class="tab-btn" onclick="switchAiSubTab('whitelist', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Whitelist</button>
+            </div>
+
+            <!-- Defaults Sub-tab -->
+            <div id="ai-subtab-defaults" class="ai-subtab-content active">
+                <!-- Default Settings Panel -->
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #0f0; margin: 0;">Default Settings</h3>
+                        <button class="btn btn-small" onclick="showEditDefaultsModal()">Edit Defaults</button>
                     </div>
-                    <div>
-                        <small style="opacity: 0.7;">Default Quota:</small>
-                        <div id="defaultQuota" style="color: #0f0; font-weight: bold;">Loading...</div>
-                    </div>
-                    <div>
-                        <small style="opacity: 0.7;">Default Reset:</small>
-                        <div id="defaultReset" style="color: #0f0; font-weight: bold;">Loading...</div>
-                    </div>
-                    <div>
-                        <small style="opacity: 0.7;">Vision Fallback:</small>
-                        <div id="defaultVisionModel" style="color: #0f0; font-weight: bold;">Loading...</div>
-                    </div>
-                </div>
-                <div style="border-top: 1px solid #0f0; padding-top: 1rem; margin-top: 1rem;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <div id="defaultSettingsDisplay" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1rem;">
                         <div>
-                            <div style="font-weight: bold; margin-bottom: 0.5rem;">Whitelist Mode:</div>
-                            <div id="whitelistModeDisplay" style="color: #0f0; font-size: 0.9rem;">Loading...</div>
+                            <small style="opacity: 0.7;">Default Model:</small>
+                            <div id="defaultModel" style="color: #0f0; font-weight: bold;">Loading...</div>
                         </div>
-                        <select id="whitelistModeSelect" onchange="updateWhitelistMode()" style="background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
-                            <option value="strict">Strict (Whitelist Only)</option>
-                            <option value="auto">Auto (Add New Users)</option>
-                        </select>
+                        <div>
+                            <small style="opacity: 0.7;">Default Quota:</small>
+                            <div id="defaultQuota" style="color: #0f0; font-weight: bold;">Loading...</div>
+                        </div>
+                        <div>
+                            <small style="opacity: 0.7;">Default Reset:</small>
+                            <div id="defaultReset" style="color: #0f0; font-weight: bold;">Loading...</div>
+                        </div>
+                        <div>
+                            <small style="opacity: 0.7;">Vision Fallback:</small>
+                            <div id="defaultVisionModel" style="color: #0f0; font-weight: bold;">Loading...</div>
+                        </div>
                     </div>
-                    <div style="margin-top: 0.5rem; opacity: 0.7; font-size: 0.85rem;">
-                        <span id="whitelistModeDescription">Strict: Only whitelisted users can use AI. Auto: New users are automatically added with default settings.</span>
+                    <div style="border-top: 1px solid #0f0; padding-top: 1rem; margin-top: 1rem;">
+                        <div style="margin-bottom: 1rem;">
+                            <small style="opacity: 0.7;">AI Identity / Personality:</small>
+                            <div id="aiIdentityDisplay" style="color: #0f0; font-size: 0.9rem; margin-top: 0.5rem; padding: 0.5rem; background: #0a0a0a; border: 1px solid #0f0; border-radius: 3px; white-space: pre-wrap;">Loading...</div>
+                        </div>
+                        <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #0f0; padding-top: 1rem;">
+                            <div>
+                                <div style="font-weight: bold; margin-bottom: 0.5rem;">Whitelist Mode:</div>
+                                <div id="whitelistModeDisplay" style="color: #0f0; font-size: 0.9rem;">Loading...</div>
+                            </div>
+                            <select id="whitelistModeSelect" onchange="updateWhitelistMode()" style="background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <option value="strict">Strict (Whitelist Only)</option>
+                                <option value="auto">Auto (Add New Users)</option>
+                            </select>
+                        </div>
+                        <div style="margin-top: 0.5rem; opacity: 0.7; font-size: 0.85rem;">
+                            <span id="whitelistModeDescription">Strict: Only whitelisted users can use AI. Auto: New users are automatically added with default settings.</span>
+                        </div>
                     </div>
-                </div>
-                <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
-                    These defaults are used when adding new users. Vision fallback is used when user's model doesn't support images.
+                    <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
+                        These defaults are used when adding new users. Vision fallback is used when user's model doesn't support images.
+                    </div>
                 </div>
             </div>
 
-            <!-- API Configuration Panel -->
-            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h3 style="color: #0f0; margin: 0;">API Configuration</h3>
-                    <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit API</button>
-                </div>
-                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
-                    <div>
-                        <small style="opacity: 0.7;">API Endpoint:</small>
-                        <div id="apiEndpoint" style="color: #0f0; font-weight: bold; word-break: break-all;">Loading...</div>
+            <!-- API Sub-tab -->
+            <div id="ai-subtab-api" class="ai-subtab-content" style="display: none;">
+                <!-- API Configuration Panel -->
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #0f0; margin: 0;">API Configuration</h3>
+                        <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit API</button>
                     </div>
-                    <div>
-                        <small style="opacity: 0.7;">API Key:</small>
-                        <div id="apiKey" style="color: #0f0; font-weight: bold; font-family: monospace;">Loading...</div>
+                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                        <div>
+                            <small style="opacity: 0.7;">API Endpoint:</small>
+                            <div id="apiEndpoint" style="color: #0f0; font-weight: bold; word-break: break-all;">Loading...</div>
+                        </div>
+                        <div>
+                            <small style="opacity: 0.7;">API Key:</small>
+                            <div id="apiKey" style="color: #0f0; font-weight: bold; font-family: monospace;">Loading...</div>
+                        </div>
                     </div>
-                </div>
-                <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
-                    <span id="apiConfigSource">Using .env fallback values</span>
-                    <button class="btn btn-small" onclick="revertApiConfig()" style="margin-left: 1rem; display: none;" id="revertApiBtn">Revert to .env</button>
+                    <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
+                        <span id="apiConfigSource">Using .env fallback values</span>
+                        <button class="btn btn-small" onclick="revertApiConfig()" style="margin-left: 1rem; display: none;" id="revertApiBtn">Revert to .env</button>
+                    </div>
                 </div>
             </div>
 
-            <!-- Supported Models Panel -->
-            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                    <h3 style="color: #0f0; margin: 0;">Supported AI Models</h3>
-                    <button class="btn btn-small" onclick="showAddModelModal()">+ Add Model</button>
+            <!-- Models Sub-tab -->
+            <div id="ai-subtab-models" class="ai-subtab-content" style="display: none;">
+                <!-- Supported Models Panel -->
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #0f0; margin: 0;">Supported AI Models</h3>
+                        <button class="btn btn-small" onclick="showAddModelModal()">+ Add Model</button>
+                    </div>
+                    <table class="commands-table">
+                        <thead>
+                            <tr>
+                                <th>Model ID</th>
+                                <th>Display Name</th>
+                                <th>Provider</th>
+                                <th>Vision Support</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="modelsTableBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; opacity: 0.6;">Loading models...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Memory Sub-tab -->
+            <div id="ai-subtab-memory" class="ai-subtab-content" style="display: none;">
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #0f0; margin: 0;">Memory Settings</h3>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 1rem;">
+                        <div style="flex: 1;">
+                            <small style="opacity: 0.7;">Max Messages per Chat:</small>
+                            <div style="display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem;">
+                                <input type="number" id="maxMemoryMessages" min="10" max="500" value="100" style="width: 100px; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                                <button class="btn btn-small" onclick="updateMaxMemory()">Update</button>
+                            </div>
+                            <small style="color: #0f0; opacity: 0.6; display: block; margin-top: 0.5rem;">
+                                Each chat stores up to this many messages for AI context (10-500)
+                            </small>
+                        </div>
+                        <div style="opacity: 0.7; font-size: 0.9rem;">
+                            <div>Current: <span id="currentMaxMemory" style="color: #0f0; font-weight: bold;">100</span> messages</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="color: #0f0; margin: 0;">Conversation Memory</h3>
+                    <button class="btn danger" onclick="clearAllMemory()">Clear All</button>
+                </div>
+                <div style="margin-bottom: 1rem; opacity: 0.7; font-size: 0.9rem;">
+                    AI maintains conversation history per chat for context continuity.
                 </div>
                 <table class="commands-table">
                     <thead>
                         <tr>
-                            <th>Model ID</th>
-                            <th>Display Name</th>
-                            <th>Provider</th>
-                            <th>Vision Support</th>
-                            <th>Status</th>
+                            <th>Chat ID</th>
+                            <th>Messages</th>
+                            <th>Last Updated</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
-                    <tbody id="modelsTableBody">
+                    <tbody id="memoryTableBody">
                         <tr>
-                            <td colspan="6" style="text-align: center; opacity: 0.6;">Loading models...</td>
+                            <td colspan="4" style="text-align: center; opacity: 0.6;">Loading memory...</td>
                         </tr>
                     </tbody>
                 </table>
             </div>
 
-            <!-- Whitelist Table -->
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h3 style="color: #0f0; margin: 0;">Whitelisted Users</h3>
+            <!-- Whitelist Sub-tab -->
+            <div id="ai-subtab-whitelist" class="ai-subtab-content" style="display: none;">
+                <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <h3 style="color: #0f0; margin: 0;">Whitelisted Users</h3>
+                    <button class="btn" onclick="showAddWhitelistModal()">+ Add User</button>
+                </div>
+                <table class="commands-table">
+                    <thead>
+                        <tr>
+                            <th>Number</th>
+                            <th>Push Name</th>
+                            <th>Model</th>
+                            <th>Usage / Quota</th>
+                            <th>Reset Period</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="whitelistTableBody">
+                        <tr>
+                            <td colspan="6" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
+                        </tr>
+                    </tbody>
+                </table>
             </div>
-            <table class="commands-table">
-                <thead>
-                    <tr>
-                        <th>Phone Number</th>
-                        <th>AI Model</th>
-                        <th>Quota</th>
-                        <th>Usage</th>
-                        <th>Reset</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="whitelistTableBody">
-                    <tr>
-                        <td colspan="6" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
-                    </tr>
-                </tbody>
-            </table>
         </div>
     </div>
 
@@ -799,6 +870,17 @@
                 <select id="editDefaultVisionModel" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
                     <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                 </select>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Model used when user's assigned model doesn't support vision/images
+                </small>
+            </div>
+            <div class="input-group">
+                <label>AI Identity / Personality:</label>
+                <textarea id="editAiIdentity" rows="3" placeholder="You are DevBot26, an AI assistant..." style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem; resize: vertical;"></textarea>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Customize how the AI introduces itself and its personality
+                </small>
+            </div>
                 <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
                     Used automatically when user sends images but their model doesn't support vision
                 </small>
