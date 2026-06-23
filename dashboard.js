@@ -604,7 +604,7 @@ class BotDashboard {
         // API: Add number to whitelist
         this.app.post('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { number, model, pushName } = req.body;
+                const { number, model, pushName, quota, resetPeriod } = req.body;
 
                 if (!number || typeof number !== 'string') {
                     return res.status(400).json({ success: false, error: 'Valid phone number is required' });
@@ -623,12 +623,28 @@ class BotDashboard {
                 // Validate pushName if provided
                 const sanitizedPushName = pushName && typeof pushName === 'string' ? pushName.trim() : null;
 
+                // Validate quota
+                const selectedQuota = quota && typeof quota === 'number' && quota >= 1 && quota <= 10000 ? quota : 100;
+
+                // Validate resetPeriod
+                const validResetPeriods = ['per5Hours', 'perDay', 'perMonth'];
+                const selectedResetPeriod = resetPeriod && validResetPeriods.includes(resetPeriod) ? resetPeriod : 'perDay';
+
                 const whitelistManager = require('./whitelistManager');
-                const normalized = await whitelistManager.addNumber(sanitized, selectedModel, sanitizedPushName);
+                const normalized = await whitelistManager.addNumber(sanitized, selectedModel, sanitizedPushName, selectedQuota, selectedResetPeriod);
 
                 const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
-                this.addLog('success', `Added ${normalized}${logName} to AI whitelist with model ${selectedModel}`);
-                res.json({ success: true, message: 'Number added to whitelist', number: normalized, model: selectedModel, pushName: sanitizedPushName });
+                const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
+                this.addLog('success', `Added ${normalized}${logName} to AI whitelist: ${selectedModel}, ${selectedQuota}/${resetLabel}`);
+                res.json({
+                    success: true,
+                    message: 'Number added to whitelist',
+                    number: normalized,
+                    model: selectedModel,
+                    pushName: sanitizedPushName,
+                    quota: selectedQuota,
+                    resetPeriod: selectedResetPeriod
+                });
             } catch (error) {
                 this.addLog('error', `Failed to add to whitelist: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
@@ -639,7 +655,7 @@ class BotDashboard {
         this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { number } = req.params;
-                const { model, newNumber, pushName } = req.body;
+                const { model, newNumber, pushName, quota, resetPeriod } = req.body;
 
                 // Validate model
                 const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
@@ -659,6 +675,13 @@ class BotDashboard {
                 // Validate pushName if provided
                 const sanitizedPushName = pushName && typeof pushName === 'string' ? pushName.trim() : null;
 
+                // Validate quota
+                const selectedQuota = quota && typeof quota === 'number' && quota >= 1 && quota <= 10000 ? quota : 100;
+
+                // Validate resetPeriod
+                const validResetPeriods = ['per5Hours', 'perDay', 'perMonth'];
+                const selectedResetPeriod = resetPeriod && validResetPeriods.includes(resetPeriod) ? resetPeriod : 'perDay';
+
                 // If number is being changed
                 if (newNumber && newNumber !== decodedOldNumber) {
                     // Validate new number format
@@ -670,19 +693,37 @@ class BotDashboard {
                     // Remove old number
                     await whitelistManager.removeNumber(decodedOldNumber);
 
-                    // Add new number with model and pushName
-                    const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName);
+                    // Add new number with all settings
+                    const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
 
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
-                    this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized}${logName} (${model})`);
-                    res.json({ success: true, message: 'Whitelist entry updated', number: normalized, model, pushName: sanitizedPushName });
+                    const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
+                    this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized}${logName} (${model}, ${selectedQuota}/${resetLabel})`);
+                    res.json({
+                        success: true,
+                        message: 'Whitelist entry updated',
+                        number: normalized,
+                        model,
+                        pushName: sanitizedPushName,
+                        quota: selectedQuota,
+                        resetPeriod: selectedResetPeriod
+                    });
                 } else {
-                    // Just update model and pushName for same number
-                    await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName);
+                    // Just update settings for same number
+                    await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
 
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
-                    this.addLog('success', `Updated ${decodedOldNumber}${logName} to model ${model}`);
-                    res.json({ success: true, message: 'Whitelist entry updated', number: decodedOldNumber, model, pushName: sanitizedPushName });
+                    const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
+                    this.addLog('success', `Updated ${decodedOldNumber}${logName}: ${model}, ${selectedQuota}/${resetLabel}`);
+                    res.json({
+                        success: true,
+                        message: 'Whitelist entry updated',
+                        number: decodedOldNumber,
+                        model,
+                        pushName: sanitizedPushName,
+                        quota: selectedQuota,
+                        resetPeriod: selectedResetPeriod
+                    });
                 }
             } catch (error) {
                 this.addLog('error', `Failed to update whitelist: ${error.message}`);
@@ -707,6 +748,201 @@ class BotDashboard {
             } catch (error) {
                 this.addLog('error', `Failed to remove from whitelist: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get AI default settings
+        this.app.get('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const settingsManager = require('./settingsManager');
+                const defaults = await settingsManager.getAll();
+
+                res.json({
+                    success: true,
+                    defaults: {
+                        defaultModel: defaults.defaultModel,
+                        defaultQuota: defaults.defaultQuota,
+                        defaultResetPeriod: defaults.defaultResetPeriod,
+                        defaultVisionModel: defaults.defaultVisionModel || 'claude-sonnet-4.5'
+                    }
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get AI defaults: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update AI default settings
+        this.app.put('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = req.body;
+
+                const settingsManager = require('./settingsManager');
+                await settingsManager.updateSettings({
+                    defaultModel,
+                    defaultQuota,
+                    defaultResetPeriod,
+                    defaultVisionModel
+                });
+
+                const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
+                const resetLabel = defaultResetPeriod === 'per5Hours' ? '5h' :
+                                  defaultResetPeriod === 'perDay' ? 'day' : 'month';
+
+                this.addLog('success', `Updated AI defaults: ${modelName}, ${defaultQuota}/${resetLabel}`);
+                res.json({
+                    success: true,
+                    message: 'Default settings updated',
+                    defaults: {
+                        defaultModel,
+                        defaultQuota,
+                        defaultResetPeriod,
+                        defaultVisionModel
+                    }
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to update AI defaults: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get supported models
+        this.app.get('/api/ai-settings/models', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const settingsManager = require('./settingsManager');
+                const models = await settingsManager.getSupportedModels();
+
+                res.json({
+                    success: true,
+                    models: models
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get models: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add new model
+        this.app.post('/api/ai-settings/models', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { id, displayName, supportsVision, enabled } = req.body;
+
+                if (!id || !displayName) {
+                    return res.status(400).json({ success: false, error: 'Model ID and display name are required' });
+                }
+
+                const settingsManager = require('./settingsManager');
+                const newModel = await settingsManager.addModel({
+                    id,
+                    displayName,
+                    supportsVision: supportsVision || false,
+                    enabled: enabled !== undefined ? enabled : true
+                });
+
+                this.addLog('success', `Added AI model: ${displayName} (${id})`);
+                res.json({
+                    success: true,
+                    message: 'Model added successfully',
+                    model: newModel
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to add model: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update model
+        this.app.put('/api/ai-settings/models/:id', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { id } = req.params;
+                const { displayName, supportsVision, enabled } = req.body;
+
+                const settingsManager = require('./settingsManager');
+                const updatedModel = await settingsManager.updateModel(id, {
+                    displayName,
+                    supportsVision,
+                    enabled
+                });
+
+                this.addLog('success', `Updated AI model: ${id}`);
+                res.json({
+                    success: true,
+                    message: 'Model updated successfully',
+                    model: updatedModel
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to update model: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Remove model
+        this.app.delete('/api/ai-settings/models/:id', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { id } = req.params;
+
+                const settingsManager = require('./settingsManager');
+                await settingsManager.removeModel(id);
+
+                this.addLog('success', `Removed AI model: ${id}`);
+                res.json({
+                    success: true,
+                    message: 'Model removed successfully'
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to remove model: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get API configuration
+        this.app.get('/api/ai-settings/api-config', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const settingsManager = require('./settingsManager');
+                const apiEndpoint = await settingsManager.getApiEndpoint();
+                const apiKey = await settingsManager.getApiKey();
+                const settings = await settingsManager.getAll();
+
+                res.json({
+                    success: true,
+                    config: {
+                        apiEndpoint: apiEndpoint,
+                        apiKey: apiKey,
+                        storedEndpoint: settings.apiEndpoint, // Raw stored value (null if using env)
+                        storedKey: settings.apiKey,           // Raw stored value (null if using env)
+                        isOverridden: !!(settings.apiEndpoint || settings.apiKey)
+                    }
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get API config: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update API configuration
+        this.app.put('/api/ai-settings/api-config', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { apiEndpoint, apiKey } = req.body;
+
+                const settingsManager = require('./settingsManager');
+                await settingsManager.updateSettings({
+                    apiEndpoint: apiEndpoint || null,
+                    apiKey: apiKey || null
+                });
+
+                if (apiEndpoint || apiKey) {
+                    this.addLog('success', `Updated API config: endpoint=${apiEndpoint || 'env'}, key=${apiKey ? 'set' : 'env'}`);
+                } else {
+                    this.addLog('success', 'Reverted API config to .env values');
+                }
+
+                res.json({
+                    success: true,
+                    message: 'API configuration updated'
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to update API config: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
             }
         });
     }

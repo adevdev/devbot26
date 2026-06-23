@@ -433,8 +433,8 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName, buttonElement) {
-    // Check authentication for commands and whitelist tabs
-    if ((tabName === 'commands' || tabName === 'whitelist') && !isAuthenticated) {
+    // Check authentication for commands and ai-settings tabs
+    if ((tabName === 'commands' || tabName === 'ai-settings') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
@@ -450,7 +450,10 @@ function switchTab(tabName, buttonElement) {
     // Load data based on tab
     if (tabName === 'commands') {
         loadCommands();
-    } else if (tabName === 'whitelist') {
+    } else if (tabName === 'ai-settings') {
+        loadAIDefaults();
+        loadApiConfig();
+        loadModels();
         loadWhitelist();
     }
 }
@@ -578,6 +581,306 @@ async function removeCommand(name) {
 }
 
 // Load whitelist
+// Load AI default settings
+async function loadAIDefaults() {
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = data.defaults;
+
+            // Format display
+            const modelDisplay = defaultModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
+            const resetDisplay = defaultResetPeriod === 'per5Hours' ? 'Every 5 Hours' :
+                                defaultResetPeriod === 'perDay' ? 'Every Day' : 'Every Month';
+            const visionDisplay = defaultVisionModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Claude Sonnet 4.5';
+
+            // Update UI
+            document.getElementById('defaultModel').textContent = modelDisplay;
+            document.getElementById('defaultQuota').textContent = defaultQuota + ' requests';
+            document.getElementById('defaultReset').textContent = resetDisplay;
+            document.getElementById('defaultVisionModel').textContent = visionDisplay;
+        } else {
+            document.getElementById('defaultModel').textContent = 'Error loading';
+            document.getElementById('defaultQuota').textContent = 'Error loading';
+            document.getElementById('defaultReset').textContent = 'Error loading';
+            document.getElementById('defaultVisionModel').textContent = 'Error loading';
+        }
+    } catch (error) {
+        console.error('Error loading AI defaults:', error);
+        document.getElementById('defaultModel').textContent = 'Error loading';
+        document.getElementById('defaultQuota').textContent = 'Error loading';
+        document.getElementById('defaultReset').textContent = 'Error loading';
+        document.getElementById('defaultVisionModel').textContent = 'Error loading';
+    }
+}
+
+// Show edit defaults modal
+async function showEditDefaultsModal() {
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel } = data.defaults;
+
+            // Populate model dropdowns dynamically
+            await populateModelDropdown('editDefaultModel', { selectedValue: defaultModel });
+            await populateModelDropdown('editDefaultVisionModel', {
+                onlyVisionCapable: true,
+                selectedValue: defaultVisionModel
+            });
+
+            document.getElementById('editDefaultQuota').value = defaultQuota;
+            document.getElementById('editDefaultResetPeriod').value = defaultResetPeriod;
+
+            document.getElementById('editDefaultsModal').showModal();
+        } else {
+            await showAlert('Error', 'Failed to load current defaults');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error loading defaults: ' + error.message);
+    }
+}
+
+// Load supported AI models
+async function loadModels() {
+    try {
+        const response = await fetch('/api/ai-settings/models', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        const tbody = document.getElementById('modelsTableBody');
+
+        if (data.success && data.models.length > 0) {
+            tbody.innerHTML = data.models.map(model => {
+                const visionBadge = model.supportsVision ?
+                    '<span style="color: #0f0;">✓ Yes</span>' :
+                    '<span style="opacity: 0.5;">✗ No</span>';
+                const statusBadge = model.enabled ?
+                    '<span style="color: #0f0;">● Enabled</span>' :
+                    '<span style="color: #ff0; opacity: 0.7;">○ Disabled</span>';
+
+                return `
+                    <tr>
+                        <td><code>${model.id}</code></td>
+                        <td>${model.displayName}</td>
+                        <td>${visionBadge}</td>
+                        <td>${statusBadge}</td>
+                        <td>
+                            <button class="btn btn-small" onclick="showEditModelModal('${model.id}')">Edit</button>
+                            <button class="btn btn-small danger" onclick="removeModel('${model.id}')">Remove</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.6;">No models configured</td></tr>';
+        }
+    } catch (error) {
+        console.error('Error loading models:', error);
+        document.getElementById('modelsTableBody').innerHTML =
+            '<tr><td colspan="5" style="text-align: center; color: #f00;">Error loading models</td></tr>';
+    }
+}
+
+// Load API configuration
+async function loadApiConfig() {
+    try {
+        const response = await fetch('/api/ai-settings/api-config', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const { apiEndpoint, apiKey, isOverridden } = data.config;
+
+            // Display endpoint
+            document.getElementById('apiEndpoint').textContent = apiEndpoint || 'Not configured';
+
+            // Display masked API key
+            if (apiKey) {
+                const masked = apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 4);
+                document.getElementById('apiKey').textContent = masked;
+            } else {
+                document.getElementById('apiKey').textContent = 'Not configured';
+            }
+
+            // Show source and revert button
+            const sourceEl = document.getElementById('apiConfigSource');
+            const revertBtn = document.getElementById('revertApiBtn');
+
+            if (isOverridden) {
+                sourceEl.textContent = '✓ Using dashboard override';
+                sourceEl.style.color = '#0f0';
+                revertBtn.style.display = 'inline-block';
+            } else {
+                sourceEl.textContent = 'Using .env fallback values';
+                sourceEl.style.color = '#888';
+                revertBtn.style.display = 'none';
+            }
+        } else {
+            document.getElementById('apiEndpoint').textContent = 'Error loading';
+            document.getElementById('apiKey').textContent = 'Error loading';
+        }
+    } catch (error) {
+        console.error('Error loading API config:', error);
+        document.getElementById('apiEndpoint').textContent = 'Error loading';
+        document.getElementById('apiKey').textContent = 'Error loading';
+    }
+}
+
+// Show edit API config modal
+async function showEditApiConfigModal() {
+    try {
+        const response = await fetch('/api/ai-settings/api-config', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Only show stored override values, not .env fallback
+            document.getElementById('editApiEndpoint').value = data.config.storedEndpoint || '';
+            document.getElementById('editApiKey').value = data.config.storedKey || '';
+
+            document.getElementById('editApiConfigModal').showModal();
+        } else {
+            await showAlert('Error', 'Failed to load current API config');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error loading API config: ' + error.message);
+    }
+}
+
+// Revert API config to .env values
+async function revertApiConfig() {
+    const confirmed = await showConfirm(
+        'Revert to .env',
+        'This will clear dashboard overrides and use .env values. Continue?'
+    );
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch('/api/ai-settings/api-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                apiEndpoint: null,
+                apiKey: null
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            loadApiConfig();
+            await showAlert('Success', 'Reverted to .env configuration');
+        } else {
+            await showAlert('Error', 'Failed to revert: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error reverting config: ' + error.message);
+    }
+}
+
+// Populate model dropdown dynamically
+async function populateModelDropdown(selectElementId, options = {}) {
+    const { onlyVisionCapable = false, onlyEnabled = true, selectedValue = null } = options;
+
+    try {
+        const response = await fetch('/api/ai-settings/models', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            let models = data.models;
+
+            // Apply filters
+            if (onlyEnabled) {
+                models = models.filter(m => m.enabled);
+            }
+            if (onlyVisionCapable) {
+                models = models.filter(m => m.supportsVision);
+            }
+
+            const select = document.getElementById(selectElementId);
+            select.innerHTML = models.map(model =>
+                `<option value="${model.id}" ${selectedValue === model.id ? 'selected' : ''}>${model.displayName}</option>`
+            ).join('');
+
+            return models;
+        }
+    } catch (error) {
+        console.error('Error populating model dropdown:', error);
+        return [];
+    }
+}
+
+// Show add model modal
+function showAddModelModal() {
+    document.getElementById('addModelId').value = '';
+    document.getElementById('addModelDisplayName').value = '';
+    document.getElementById('addModelSupportsVision').checked = false;
+    document.getElementById('addModelEnabled').checked = true;
+    document.getElementById('addModelModal').showModal();
+}
+
+// Show edit model modal
+async function showEditModelModal(modelId) {
+    try {
+        const response = await fetch('/api/ai-settings/models', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            const model = data.models.find(m => m.id === modelId);
+            if (model) {
+                document.getElementById('editModelId').value = model.id;
+                document.getElementById('editModelDisplayName').value = model.displayName;
+                document.getElementById('editModelSupportsVision').checked = model.supportsVision;
+                document.getElementById('editModelEnabled').checked = model.enabled;
+                document.getElementById('editModelModal').showModal();
+            }
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error loading model: ' + error.message);
+    }
+}
+
+// Remove model
+async function removeModel(modelId) {
+    const confirmed = await showConfirm('Remove Model', `Remove model "${modelId}"? This cannot be undone.`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/ai-settings/models/${encodeURIComponent(modelId)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            loadModels();
+            loadAIDefaults(); // Refresh in case this was a default
+            await showAlert('Success', 'Model removed successfully!');
+        } else {
+            await showAlert('Error', 'Failed to remove model: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error removing model: ' + error.message);
+    }
+}
+
 async function loadWhitelist() {
     try {
         const response = await fetch('/api/whitelist', {
@@ -600,7 +903,7 @@ function renderWhitelist(users) {
     const tbody = document.getElementById('whitelistTableBody');
 
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; opacity: 0.6;">No numbers in whitelist</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No users in AI whitelist</td></tr>';
         return;
     }
 
@@ -610,22 +913,38 @@ function renderWhitelist(users) {
         const model = typeof user === 'string' ? 'qwen3-coder-next' : user.model;
         const pushName = typeof user === 'object' && user.pushName ? user.pushName : 'Unknown';
         const jid = typeof user === 'object' && user.jid ? user.jid : number;
+        const quota = typeof user === 'object' && user.quota ? user.quota : 100;
+        const usageCount = typeof user === 'object' && user.usageCount ? user.usageCount : 0;
+        const resetPeriod = typeof user === 'object' && user.resetPeriod ? user.resetPeriod : 'perDay';
 
         // Extract JID number (before @ symbol)
         const jidNumber = jid.split('@')[0];
         const encodedNumber = encodeURIComponent(number);
         const encodedModel = encodeURIComponent(model);
         const encodedPushName = encodeURIComponent(pushName);
+        const encodedQuota = quota;
+        const encodedResetPeriod = resetPeriod;
 
         // Format model name for display
         const modelDisplay = model === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
+
+        // Format reset period
+        const resetDisplay = resetPeriod === 'per5Hours' ? 'Every 5h' :
+                            resetPeriod === 'perDay' ? 'Daily' : 'Monthly';
+
+        // Usage percentage for color coding
+        const usagePercent = (usageCount / quota) * 100;
+        const usageColor = usagePercent >= 90 ? '#f00' : usagePercent >= 70 ? '#ff0' : '#0f0';
 
         return `
             <tr>
                 <td><strong>${pushName}</strong><br><small style="opacity: 0.6;">${jidNumber}</small></td>
                 <td><span class="badge">${modelDisplay}</span></td>
+                <td style="text-align: center;">${quota}</td>
+                <td style="text-align: center; color: ${usageColor};">${usageCount}/${quota}</td>
+                <td style="text-align: center;"><small>${resetDisplay}</small></td>
                 <td>
-                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}')" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}', ${encodedQuota}, '${encodedResetPeriod}')" style="margin-right: 0.5rem;">Edit</button>
                     <button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button>
                 </td>
             </tr>
@@ -636,20 +955,44 @@ function renderWhitelist(users) {
 // Render whitelist error
 function renderWhitelistError(message) {
     const tbody = document.getElementById('whitelistTableBody');
-    tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
 
 // Show add whitelist modal
-function showAddWhitelistModal() {
+async function showAddWhitelistModal() {
     const modal = document.getElementById('addWhitelistModal');
     document.getElementById('whitelistNumber').value = '';
     document.getElementById('whitelistPushName').value = '';
-    document.getElementById('whitelistModel').value = 'qwen3-coder-next';
+    document.getElementById('whitelistQuota').value = '100';
+    document.getElementById('whitelistResetPeriod').value = 'perDay';
+
+    // Load defaults and populate model dropdown
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            await populateModelDropdown('whitelistModel', {
+                selectedValue: data.defaults.defaultModel
+            });
+            document.getElementById('whitelistQuota').value = data.defaults.defaultQuota;
+            document.getElementById('whitelistResetPeriod').value = data.defaults.defaultResetPeriod;
+        } else {
+            // Fallback to populating without defaults
+            await populateModelDropdown('whitelistModel');
+        }
+    } catch (error) {
+        console.error('Error loading defaults:', error);
+        await populateModelDropdown('whitelistModel');
+    }
+
     modal.showModal();
 }
 
 // Show edit whitelist modal
-function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '') {
+async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay') {
     const number = decodeURIComponent(encodedNumber);
     const model = decodeURIComponent(encodedModel);
     const pushName = encodedPushName ? decodeURIComponent(encodedPushName) : '';
@@ -657,7 +1000,11 @@ function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '
     const modal = document.getElementById('editWhitelistModal');
     document.getElementById('editWhitelistNumber').value = number;
     document.getElementById('editWhitelistPushName').value = pushName;
-    document.getElementById('editWhitelistModel').value = model;
+    document.getElementById('editWhitelistQuota').value = quota;
+    document.getElementById('editWhitelistResetPeriod').value = resetPeriod;
+
+    // Populate model dropdown dynamically
+    await populateModelDropdown('editWhitelistModel', { selectedValue: model });
 
     // Store original number for API call
     modal.dataset.number = number;
@@ -674,6 +1021,8 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
     const number = document.getElementById('whitelistNumber').value.trim();
     const pushName = document.getElementById('whitelistPushName').value.trim();
     const model = document.getElementById('whitelistModel').value;
+    const quota = parseInt(document.getElementById('whitelistQuota').value);
+    const resetPeriod = document.getElementById('whitelistResetPeriod').value;
 
     if (!number) {
         await showAlert('Error', 'Phone number is required');
@@ -686,12 +1035,24 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
         return;
     }
 
+    // Validate quota
+    if (isNaN(quota) || quota < 1 || quota > 10000) {
+        await showAlert('Error', 'Quota must be between 1 and 10000');
+        return;
+    }
+
     try {
         const response = await fetch('/api/whitelist', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ number, model, pushName: pushName || null })
+            body: JSON.stringify({
+                number,
+                model,
+                pushName: pushName || null,
+                quota,
+                resetPeriod
+            })
         });
 
         const data = await response.json();
@@ -701,13 +1062,15 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
             document.getElementById('whitelistNumber').value = '';
             document.getElementById('whitelistPushName').value = '';
             document.getElementById('whitelistModel').value = 'qwen3-coder-next';
+            document.getElementById('whitelistQuota').value = '100';
+            document.getElementById('whitelistResetPeriod').value = 'perDay';
             loadWhitelist();
-            await showAlert('Success', 'Number added to whitelist successfully!');
+            await showAlert('Success', 'User added to AI whitelist successfully!');
         } else {
-            await showAlert('Error', 'Failed to add number: ' + data.error);
+            await showAlert('Error', 'Failed to add user: ' + data.error);
         }
     } catch (error) {
-        await showAlert('Error', 'Error adding number: ' + error.message);
+        await showAlert('Error', 'Error adding user: ' + error.message);
     }
 });
 
@@ -722,6 +1085,8 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     const newNumber = document.getElementById('editWhitelistNumber').value.trim();
     const pushName = document.getElementById('editWhitelistPushName').value.trim();
     const model = document.getElementById('editWhitelistModel').value;
+    const quota = parseInt(document.getElementById('editWhitelistQuota').value);
+    const resetPeriod = document.getElementById('editWhitelistResetPeriod').value;
 
     if (!newNumber) {
         await showAlert('Error', 'Phone number is required');
@@ -734,12 +1099,24 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
         return;
     }
 
+    // Validate quota
+    if (isNaN(quota) || quota < 1 || quota > 10000) {
+        await showAlert('Error', 'Quota must be between 1 and 10000');
+        return;
+    }
+
     try {
         const response = await fetch(`/api/whitelist/${encodeURIComponent(oldNumber)}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             credentials: 'same-origin',
-            body: JSON.stringify({ newNumber, model, pushName: pushName || null })
+            body: JSON.stringify({
+                newNumber,
+                model,
+                pushName: pushName || null,
+                quota,
+                resetPeriod
+            })
         });
 
         const data = await response.json();
@@ -747,12 +1124,176 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
         if (data.success) {
             document.getElementById('editWhitelistModal').close();
             loadWhitelist();
-            await showAlert('Success', 'Whitelist entry updated successfully!');
+            await showAlert('Success', 'AI settings updated successfully!');
         } else {
-            await showAlert('Error', 'Failed to update entry: ' + data.error);
+            await showAlert('Error', 'Failed to update settings: ' + data.error);
         }
     } catch (error) {
-        await showAlert('Error', 'Error updating entry: ' + error.message);
+        await showAlert('Error', 'Error updating settings: ' + error.message);
+    }
+});
+
+// Edit Defaults modal handlers
+document.getElementById('editDefaultsCancel').addEventListener('click', () => {
+    document.getElementById('editDefaultsModal').close();
+});
+
+document.getElementById('editDefaultsSubmit').addEventListener('click', async () => {
+    const defaultModel = document.getElementById('editDefaultModel').value;
+    const defaultQuota = parseInt(document.getElementById('editDefaultQuota').value);
+    const defaultResetPeriod = document.getElementById('editDefaultResetPeriod').value;
+    const defaultVisionModel = document.getElementById('editDefaultVisionModel').value;
+
+    // Validate quota
+    if (isNaN(defaultQuota) || defaultQuota < 1 || defaultQuota > 10000) {
+        await showAlert('Error', 'Quota must be between 1 and 10000');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/ai-settings/defaults', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                defaultModel,
+                defaultQuota,
+                defaultResetPeriod,
+                defaultVisionModel
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('editDefaultsModal').close();
+            loadAIDefaults();
+            await showAlert('Success', 'Default AI settings updated successfully!');
+        } else {
+            await showAlert('Error', 'Failed to update defaults: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating defaults: ' + error.message);
+    }
+});
+
+// Add Model modal handlers
+document.getElementById('addModelCancel').addEventListener('click', () => {
+    document.getElementById('addModelModal').close();
+});
+
+document.getElementById('addModelSubmit').addEventListener('click', async () => {
+    const id = document.getElementById('addModelId').value.trim();
+    const displayName = document.getElementById('addModelDisplayName').value.trim();
+    const supportsVision = document.getElementById('addModelSupportsVision').checked;
+    const enabled = document.getElementById('addModelEnabled').checked;
+
+    if (!id || !displayName) {
+        await showAlert('Error', 'Model ID and Display Name are required');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/ai-settings/models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                id,
+                displayName,
+                supportsVision,
+                enabled
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('addModelModal').close();
+            loadModels();
+            await showAlert('Success', 'Model added successfully!');
+        } else {
+            await showAlert('Error', 'Failed to add model: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error adding model: ' + error.message);
+    }
+});
+
+// Edit Model modal handlers
+document.getElementById('editModelCancel').addEventListener('click', () => {
+    document.getElementById('editModelModal').close();
+});
+
+document.getElementById('editModelSubmit').addEventListener('click', async () => {
+    const id = document.getElementById('editModelId').value;
+    const displayName = document.getElementById('editModelDisplayName').value.trim();
+    const supportsVision = document.getElementById('editModelSupportsVision').checked;
+    const enabled = document.getElementById('editModelEnabled').checked;
+
+    if (!displayName) {
+        await showAlert('Error', 'Display Name is required');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai-settings/models/${encodeURIComponent(id)}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                displayName,
+                supportsVision,
+                enabled
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('editModelModal').close();
+            loadModels();
+            loadAIDefaults(); // Refresh in case this was a default
+            await showAlert('Success', 'Model updated successfully!');
+        } else {
+            await showAlert('Error', 'Failed to update model: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating model: ' + error.message);
+    }
+});
+
+// Edit API Config modal handlers
+document.getElementById('editApiConfigCancel').addEventListener('click', () => {
+    document.getElementById('editApiConfigModal').close();
+});
+
+document.getElementById('editApiConfigSubmit').addEventListener('click', async () => {
+    const apiEndpoint = document.getElementById('editApiEndpoint').value.trim();
+    const apiKey = document.getElementById('editApiKey').value.trim();
+
+    try {
+        const response = await fetch('/api/ai-settings/api-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                apiEndpoint: apiEndpoint || null,
+                apiKey: apiKey || null
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('editApiConfigModal').close();
+            loadApiConfig();
+            await showAlert('Success', 'API configuration updated successfully!');
+        } else {
+            await showAlert('Error', 'Failed to update API config: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error updating API config: ' + error.message);
     }
 });
 

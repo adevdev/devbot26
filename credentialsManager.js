@@ -2,7 +2,22 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config();
 
-const CREDS_STORAGE = process.env.CREDS_STORAGE || 'file';
+// Storage hierarchy: CREDENTIALS_STORAGE -> GLOBAL_STORAGE -> 'file'
+function getStorageType() {
+    const credentialsStorage = process.env.CREDENTIALS_STORAGE;
+    if (credentialsStorage && (credentialsStorage === 'file' || credentialsStorage === 'mongodb')) {
+        return credentialsStorage;
+    }
+
+    const globalStorage = process.env.GLOBAL_STORAGE;
+    if (globalStorage && (globalStorage === 'file' || globalStorage === 'mongodb')) {
+        return globalStorage;
+    }
+
+    return 'file';
+}
+
+const CREDS_STORAGE = getStorageType();
 const MONGO_URI = process.env.MONGO_URI;
 const CREDS_FILE_PATH = './wachan/state/creds.json';
 
@@ -19,18 +34,31 @@ async function getMongoClient() {
         mongoClient = new MongoClient(MONGO_URI);
         await mongoClient.connect();
         db = mongoClient.db();
-        console.log('Connected to MongoDB for credentials storage');
+        console.log('[MongoDB] Connected successfully');
         return mongoClient;
     } catch (error) {
-        console.error('MongoDB connection failed:', error.message);
+        console.error('[MongoDB] Connection failed:', error.message);
         throw error;
+    }
+}
+
+function getMongoDbName() {
+    if (!MONGO_URI) return null;
+
+    try {
+        // Extract DB name from URI (last segment of path)
+        const url = new URL(MONGO_URI);
+        const dbName = url.pathname.split('/').pop();
+        return dbName || 'whatsapp-bot';
+    } catch (error) {
+        return 'whatsapp-bot';
     }
 }
 
 async function saveCredsToMongo(data) {
     try {
         await getMongoClient();
-        const collection = db.collection('devbot26');
+        const collection = db.collection('credentials');
 
         await collection.replaceOne(
             { _id: 'bot_credentials' },
@@ -48,7 +76,7 @@ async function saveCredsToMongo(data) {
 async function loadCredsFromMongo() {
     try {
         await getMongoClient();
-        const collection = db.collection('devbot26');
+        const collection = db.collection('credentials');
         const doc = await collection.findOne({ _id: 'bot_credentials' });
 
         if (doc && doc.data) {
@@ -66,7 +94,7 @@ async function loadCredsFromMongo() {
 async function credsExistInMongo() {
     try {
         await getMongoClient();
-        const collection = db.collection('devbot26');
+        const collection = db.collection('credentials');
         const count = await collection.countDocuments({ _id: 'bot_credentials' });
         return count > 0;
     } catch (error) {
@@ -78,7 +106,7 @@ async function credsExistInMongo() {
 async function deleteCredsFromMongo() {
     try {
         await getMongoClient();
-        const collection = db.collection('devbot26');
+        const collection = db.collection('credentials');
         await collection.deleteOne({ _id: 'bot_credentials' });
         console.log('Credentials deleted from MongoDB');
     } catch (error) {
@@ -164,5 +192,6 @@ module.exports = {
     deleteCreds,
     closeConnection,
     getStorageType: () => CREDS_STORAGE,
-    getMongoClient: getMongoClient
+    getMongoClient: getMongoClient,
+    getMongoDbName: getMongoDbName
 };

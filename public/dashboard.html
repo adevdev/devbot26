@@ -435,7 +435,7 @@
             <div class="tabs">
                 <button class="tab-btn active" onclick="switchTab('terminal', this)">Terminal</button>
                 <button class="tab-btn" onclick="switchTab('commands', this)">Commands</button>
-                <button class="tab-btn" onclick="switchTab('whitelist', this)">Whitelist</button>
+                <button class="tab-btn" onclick="switchTab('ai-settings', this)">AI Settings</button>
             </div>
         </div>
         <div class="controls" id="controls">
@@ -477,24 +477,107 @@
         </div>
     </div>
 
-    <!-- Whitelist Tab -->
-    <div id="tab-whitelist" class="tab-content">
+    <!-- AI Settings Tab -->
+    <div id="tab-ai-settings" class="tab-content">
         <div class="commands-container">
             <div class="commands-header">
-                <h2 style="color: #0f0; font-size: 1rem;">AI Whitelist Management</h2>
-                <button class="btn" onclick="showAddWhitelistModal()">+ Add Number</button>
+                <h2 style="color: #0f0; font-size: 1rem;">AI Settings & Whitelist</h2>
+                <button class="btn" onclick="showAddWhitelistModal()">+ Add User</button>
+            </div>
+
+            <!-- Default Settings Panel -->
+            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="color: #0f0; margin: 0;">Default Settings</h3>
+                    <button class="btn btn-small" onclick="showEditDefaultsModal()">Edit Defaults</button>
+                </div>
+                <div id="defaultSettingsDisplay" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
+                    <div>
+                        <small style="opacity: 0.7;">Default Model:</small>
+                        <div id="defaultModel" style="color: #0f0; font-weight: bold;">Loading...</div>
+                    </div>
+                    <div>
+                        <small style="opacity: 0.7;">Default Quota:</small>
+                        <div id="defaultQuota" style="color: #0f0; font-weight: bold;">Loading...</div>
+                    </div>
+                    <div>
+                        <small style="opacity: 0.7;">Default Reset:</small>
+                        <div id="defaultReset" style="color: #0f0; font-weight: bold;">Loading...</div>
+                    </div>
+                    <div>
+                        <small style="opacity: 0.7;">Vision Fallback:</small>
+                        <div id="defaultVisionModel" style="color: #0f0; font-weight: bold;">Loading...</div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
+                    These defaults are used when adding new users. Vision fallback is used when user's model doesn't support images.
+                </div>
+            </div>
+
+            <!-- API Configuration Panel -->
+            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="color: #0f0; margin: 0;">API Configuration</h3>
+                    <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit API</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                    <div>
+                        <small style="opacity: 0.7;">API Endpoint:</small>
+                        <div id="apiEndpoint" style="color: #0f0; font-weight: bold; word-break: break-all;">Loading...</div>
+                    </div>
+                    <div>
+                        <small style="opacity: 0.7;">API Key:</small>
+                        <div id="apiKey" style="color: #0f0; font-weight: bold; font-family: monospace;">Loading...</div>
+                    </div>
+                </div>
+                <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
+                    <span id="apiConfigSource">Using .env fallback values</span>
+                    <button class="btn btn-small" onclick="revertApiConfig()" style="margin-left: 1rem; display: none;" id="revertApiBtn">Revert to .env</button>
+                </div>
+            </div>
+
+            <!-- Supported Models Panel -->
+            <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <h3 style="color: #0f0; margin: 0;">Supported AI Models</h3>
+                    <button class="btn btn-small" onclick="showAddModelModal()">+ Add Model</button>
+                </div>
+                <table class="commands-table">
+                    <thead>
+                        <tr>
+                            <th>Model ID</th>
+                            <th>Display Name</th>
+                            <th>Vision Support</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="modelsTableBody">
+                        <tr>
+                            <td colspan="5" style="text-align: center; opacity: 0.6;">Loading models...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Whitelist Table -->
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="color: #0f0; margin: 0;">Whitelisted Users</h3>
             </div>
             <table class="commands-table">
                 <thead>
                     <tr>
                         <th>Phone Number</th>
                         <th>AI Model</th>
+                        <th>Quota</th>
+                        <th>Usage</th>
+                        <th>Reset</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody id="whitelistTableBody">
                     <tr>
-                        <td colspan="3" style="text-align: center; opacity: 0.6;">Loading whitelist...</td>
+                        <td colspan="6" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
                     </tr>
                 </tbody>
             </table>
@@ -561,7 +644,7 @@
     <!-- Add Whitelist Modal -->
     <dialog id="addWhitelistModal">
         <div class="modal-content">
-            <h3 class="modal-title">Add Number to Whitelist</h3>
+            <h3 class="modal-title">Add User to AI Whitelist</h3>
             <div class="input-group">
                 <label>Phone Number:</label>
                 <input type="text" id="whitelistNumber" placeholder="6212345678910">
@@ -581,9 +664,24 @@
                     <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                 </select>
             </div>
+            <div class="input-group">
+                <label>Request Quota:</label>
+                <input type="number" id="whitelistQuota" placeholder="100" value="100" min="1" max="10000" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Number of AI requests allowed per reset period (1-10000)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Quota Reset Period:</label>
+                <select id="whitelistResetPeriod" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="per5Hours">Every 5 Hours</option>
+                    <option value="perDay" selected>Every Day</option>
+                    <option value="perMonth">Every Month</option>
+                </select>
+            </div>
             <div class="modal-buttons">
                 <button class="btn" id="addWhitelistCancel">Cancel</button>
-                <button class="btn" id="addWhitelistSubmit">Add Number</button>
+                <button class="btn" id="addWhitelistSubmit">Add User</button>
             </div>
         </div>
     </dialog>
@@ -591,7 +689,7 @@
     <!-- Edit Whitelist Modal -->
     <dialog id="editWhitelistModal">
         <div class="modal-content">
-            <h3 class="modal-title">Edit Whitelist Entry</h3>
+            <h3 class="modal-title">Edit AI Settings</h3>
             <div class="input-group">
                 <label>Phone Number:</label>
                 <input type="text" id="editWhitelistNumber" placeholder="6212345678910">
@@ -610,9 +708,176 @@
                     <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
                 </select>
             </div>
+            <div class="input-group">
+                <label>Request Quota:</label>
+                <input type="number" id="editWhitelistQuota" placeholder="100" value="100" min="1" max="10000" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Number of AI requests allowed per reset period (1-10000)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Quota Reset Period:</label>
+                <select id="editWhitelistResetPeriod" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="per5Hours">Every 5 Hours</option>
+                    <option value="perDay">Every Day</option>
+                    <option value="perMonth">Every Month</option>
+                </select>
+            </div>
             <div class="modal-buttons">
                 <button class="btn" id="editWhitelistCancel">Cancel</button>
                 <button class="btn" id="editWhitelistSubmit">Update</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit Default Settings Modal -->
+    <dialog id="editDefaultsModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Edit Default AI Settings</h3>
+            <div style="margin-bottom: 1rem; opacity: 0.8; font-size: 0.9rem;">
+                These settings will be used as defaults when adding new users without specifying custom values.
+            </div>
+            <div class="input-group">
+                <label>Default AI Model:</label>
+                <select id="editDefaultModel" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="qwen3-coder-next">Qwen3 Coder Next</option>
+                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Default Request Quota:</label>
+                <input type="number" id="editDefaultQuota" placeholder="100" value="100" min="1" max="10000" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Number of AI requests allowed per reset period (1-10000)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Default Reset Period:</label>
+                <select id="editDefaultResetPeriod" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="per5Hours">Every 5 Hours</option>
+                    <option value="perDay">Every Day</option>
+                    <option value="perMonth">Every Month</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label>Vision Fallback Model:</label>
+                <select id="editDefaultVisionModel" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
+                </select>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Used automatically when user sends images but their model doesn't support vision
+                </small>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="editDefaultsCancel">Cancel</button>
+                <button class="btn" id="editDefaultsSubmit">Save Defaults</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Add Model Modal -->
+    <dialog id="addModelModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Add AI Model</h3>
+            <div class="input-group">
+                <label>Model ID:</label>
+                <input type="text" id="addModelId" placeholder="gpt-4o" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Unique identifier for the model (e.g., gpt-4o, claude-3-opus)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Display Name:</label>
+                <input type="text" id="addModelDisplayName" placeholder="GPT-4 Omni" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Human-readable name shown in UI
+                </small>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="addModelSupportsVision" style="width: auto;">
+                    <span>Supports Vision (can process images)</span>
+                </label>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="addModelEnabled" checked style="width: auto;">
+                    <span>Enabled (available for selection)</span>
+                </label>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="addModelCancel">Cancel</button>
+                <button class="btn" id="addModelSubmit">Add Model</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit Model Modal -->
+    <dialog id="editModelModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Edit AI Model</h3>
+            <div class="input-group">
+                <label>Model ID:</label>
+                <input type="text" id="editModelId" disabled style="width: 100%; background: #222; color: #888; border: 1px solid #444; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem; cursor: not-allowed;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Model ID cannot be changed
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Display Name:</label>
+                <input type="text" id="editModelDisplayName" placeholder="GPT-4 Omni" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="editModelSupportsVision" style="width: auto;">
+                    <span>Supports Vision (can process images)</span>
+                </label>
+            </div>
+            <div class="input-group">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                    <input type="checkbox" id="editModelEnabled" style="width: auto;">
+                    <span>Enabled (available for selection)</span>
+                </label>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="editModelCancel">Cancel</button>
+                <button class="btn" id="editModelSubmit">Update Model</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Edit API Configuration Modal -->
+    <dialog id="editApiConfigModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Edit API Configuration</h3>
+            <div style="margin-bottom: 1rem; opacity: 0.8; font-size: 0.9rem;">
+                Override API settings. Leave fields empty to use .env fallback values.
+            </div>
+            <div class="input-group">
+                <label>API Endpoint:</label>
+                <input type="text" id="editApiEndpoint" placeholder="ai2.adevdev.com" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    API endpoint hostname (e.g., api.openai.com). Leave empty to use AI_API_ENDPOINT from .env
+                </small>
+            </div>
+            <div class="input-group">
+                <label>API Key:</label>
+                <input type="password" id="editApiKey" placeholder="sk-..." style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    API key for authentication. Leave empty to use AI_API_KEY from .env
+                </small>
+            </div>
+            <div style="background: #1a1a1a; border: 1px solid #ff0; padding: 0.75rem; margin: 1rem 0; border-radius: 4px;">
+                <div style="color: #ff0; font-size: 0.85rem; margin-bottom: 0.5rem; font-weight: bold;">⚠️ Important:</div>
+                <div style="color: #0f0; opacity: 0.9; font-size: 0.85rem; line-height: 1.6;">
+                    • Once set, these values override .env file<br>
+                    • Stored in file/MongoDB based on AI_SETTINGS_STORAGE<br>
+                    • Click "Revert to .env" to clear overrides
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="editApiConfigCancel">Cancel</button>
+                <button class="btn" id="editApiConfigSubmit">Save API Config</button>
             </div>
         </div>
     </dialog>

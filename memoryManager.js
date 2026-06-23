@@ -1,5 +1,6 @@
 const fs = require('fs').promises;
 const path = require('path');
+const storageHelper = require('./storageHelper');
 
 const MEMORY_DIR = path.join(__dirname, 'memory');
 const MAX_MESSAGES = 100; // 50 exchanges (user + assistant pairs)
@@ -7,6 +8,10 @@ const MAX_MESSAGES = 100; // 50 exchanges (user + assistant pairs)
 class MemoryManager {
     constructor() {
         this.ensureMemoryDir();
+    }
+
+    getStorageType() {
+        return storageHelper.getStorageType(storageHelper.STORAGE_COMPONENTS.MEMORY);
     }
 
     async ensureMemoryDir() {
@@ -24,6 +29,16 @@ class MemoryManager {
     }
 
     async loadMemory(roomId) {
+        const storageType = this.getStorageType();
+
+        if (storageType === 'mongodb') {
+            return this.loadMemoryFromMongoDB(roomId);
+        } else {
+            return this.loadMemoryFromFile(roomId);
+        }
+    }
+
+    async loadMemoryFromFile(roomId) {
         try {
             const memoryPath = this.getMemoryPath(roomId);
             const data = await fs.readFile(memoryPath, 'utf8');
@@ -34,14 +49,42 @@ class MemoryManager {
                 // File doesn't exist yet, return empty array
                 return [];
             }
-            console.error('[Memory] Failed to load memory:', error.message);
+            console.error('[Memory] Failed to load memory from file:', error.message);
+            return [];
+        }
+    }
+
+    async loadMemoryFromMongoDB(roomId) {
+        try {
+            const mongoClient = await storageHelper.getMongoClient();
+            const db = mongoClient.db();
+            const collection = db.collection('memories');
+
+            const doc = await collection.findOne({ _id: roomId });
+
+            if (doc && doc.messages) {
+                return doc.messages;
+            }
+            return [];
+        } catch (error) {
+            console.error('[Memory] Failed to load memory from MongoDB:', error.message);
             return [];
         }
     }
 
     async saveMessage(roomId, role, content, metadata = {}) {
+        const storageType = this.getStorageType();
+
+        if (storageType === 'mongodb') {
+            return this.saveMessageToMongoDB(roomId, role, content, metadata);
+        } else {
+            return this.saveMessageToFile(roomId, role, content, metadata);
+        }
+    }
+
+    async saveMessageToFile(roomId, role, content, metadata = {}) {
         try {
-            const messages = await this.loadMemory(roomId);
+            const messages = await this.loadMemoryFromFile(roomId);
 
             // Add new message
             messages.push({
@@ -64,7 +107,43 @@ class MemoryManager {
 
             console.log(`[Memory] Saved message to ${roomId} (${trimmed.length} total)`);
         } catch (error) {
-            console.error('[Memory] Failed to save message:', error.message);
+            console.error('[Memory] Failed to save message to file:', error.message);
+        }
+    }
+
+    async saveMessageToMongoDB(roomId, role, content, metadata = {}) {
+        try {
+            const mongoClient = await storageHelper.getMongoClient();
+            const db = mongoClient.db();
+            const collection = db.collection('memories');
+
+            const newMessage = {
+                timestamp: new Date().toISOString(),
+                role: role,
+                content: content,
+                ...metadata
+            };
+
+            // Push new message and trim to MAX_MESSAGES
+            await collection.updateOne(
+                { _id: roomId },
+                {
+                    $push: {
+                        messages: {
+                            $each: [newMessage],
+                            $slice: -MAX_MESSAGES // Keep last MAX_MESSAGES only
+                        }
+                    },
+                    $set: {
+                        lastUpdated: new Date().toISOString()
+                    }
+                },
+                { upsert: true }
+            );
+
+            console.log(`[Memory] Saved message to ${roomId} (MongoDB)`);
+        } catch (error) {
+            console.error('[Memory] Failed to save message to MongoDB:', error.message);
         }
     }
 
@@ -105,21 +184,56 @@ class MemoryManager {
     }
 
     async clearMemory(roomId) {
+        const storageType = this.getStorageType();
+
+        if (storageType === 'mongodb') {
+            return this.clearMemoryFromMongoDB(roomId);
+        } else {
+            return this.clearMemoryFromFile(roomId);
+        }
+    }
+
+    async clearMemoryFromFile(roomId) {
         try {
             const memoryPath = this.getMemoryPath(roomId);
             await fs.unlink(memoryPath);
-            console.log(`[Memory] Cleared memory for ${roomId}`);
+            console.log(`[Memory] Cleared memory for ${roomId} (file)`);
             return true;
         } catch (error) {
             if (error.code === 'ENOENT') {
                 return true; // Already doesn't exist
             }
-            console.error('[Memory] Failed to clear memory:', error.message);
+            console.error('[Memory] Failed to clear memory from file:', error.message);
+            return false;
+        }
+    }
+
+    async clearMemoryFromMongoDB(roomId) {
+        try {
+            const mongoClient = await storageHelper.getMongoClient();
+            const db = mongoClient.db();
+            const collection = db.collection('memories');
+
+            await collection.deleteOne({ _id: roomId });
+            console.log(`[Memory] Cleared memory for ${roomId} (MongoDB)`);
+            return true;
+        } catch (error) {
+            console.error('[Memory] Failed to clear memory from MongoDB:', error.message);
             return false;
         }
     }
 
     async getAllRooms() {
+        const storageType = this.getStorageType();
+
+        if (storageType === 'mongodb') {
+            return this.getAllRoomsFromMongoDB();
+        } else {
+            return this.getAllRoomsFromFile();
+        }
+    }
+
+    async getAllRoomsFromFile() {
         try {
             const files = await fs.readdir(MEMORY_DIR);
             const rooms = [];
@@ -140,7 +254,28 @@ class MemoryManager {
 
             return rooms;
         } catch (error) {
-            console.error('[Memory] Failed to get all rooms:', error.message);
+            console.error('[Memory] Failed to get all rooms from file:', error.message);
+            return [];
+        }
+    }
+
+    async getAllRoomsFromMongoDB() {
+        try {
+            const mongoClient = await storageHelper.getMongoClient();
+            const db = mongoClient.db();
+            const collection = db.collection('memories');
+
+            const docs = await collection.find({}).toArray();
+            const rooms = docs.map(doc => ({
+                roomId: doc._id,
+                messageCount: doc.messages?.length || 0,
+                lastUpdated: doc.lastUpdated,
+                file: null // No file in MongoDB
+            }));
+
+            return rooms;
+        } catch (error) {
+            console.error('[Memory] Failed to get all rooms from MongoDB:', error.message);
             return [];
         }
     }

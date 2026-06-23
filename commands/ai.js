@@ -1,4 +1,5 @@
 const whitelistManager = require('../whitelistManager');
+const settingsManager = require('../settingsManager');
 const { startContinuousTyping } = require('../utils/typing');
 const https = require('https');
 const { Jimp } = require('jimp');
@@ -68,6 +69,49 @@ module.exports = {
             }
         }
 
+        // Check quota (try both lid and jid, like whitelist check)
+        let quotaCheck = null;
+
+        // Try lid first if available
+        if (message.sender.lid) {
+            quotaCheck = await whitelistManager.checkQuota(message.sender.lid);
+        }
+
+        // If lid failed or not found, try jid
+        if (!quotaCheck || !quotaCheck.allowed) {
+            const jidCheck = await whitelistManager.checkQuota(message.sender.id);
+            // Use jid result if lid was not whitelisted or jid has better result
+            if (!quotaCheck || quotaCheck.reason === 'Not whitelisted') {
+                quotaCheck = jidCheck;
+            }
+        }
+
+        if (!quotaCheck.allowed) {
+            // Handle data corruption error
+            if (quotaCheck.reason === 'Data corrupted') {
+                console.error(`[AI] Data corrupted for user`);
+                return `*Error: Data Corrupted*\n\n` +
+                       `${quotaCheck.error}\n\n` +
+                       `Please contact the bot administrator.`;
+            }
+
+            // Handle quota exceeded
+            console.log(`[AI] Quota exceeded: ${quotaCheck.usageCount}/${quotaCheck.quota}`);
+            const resetPeriodLabel = quotaCheck.resetPeriod === 'per5Hours' ? '5 hours' :
+                                     quotaCheck.resetPeriod === 'perDay' ? 'day' : 'month';
+            return `*Quota Exceeded*\n\n` +
+                   `You've used ${quotaCheck.usageCount}/${quotaCheck.quota} requests.\n` +
+                   `Quota resets every ${resetPeriodLabel}.\n\n` +
+                   `Please wait for the next reset period.`;
+        }
+
+        console.log(`[AI] Quota check passed: ${quotaCheck.remaining}/${quotaCheck.quota} remaining`);
+
+        // Track which identifier worked for usage increment later
+        const workingIdentifier = message.sender.lid &&
+            await whitelistManager.isWhitelisted(message.sender.lid) ?
+            message.sender.lid : message.sender.id;
+
         // Get user's assigned model (try lid first since @mentions use lid, fallback to id)
         let userModel = message.sender.lid ? await whitelistManager.getModel(message.sender.lid) : null;
         if (!userModel || userModel === 'qwen3-coder-next') {
@@ -92,11 +136,12 @@ module.exports = {
             imageType = message.mimetype || 'image/jpeg';
         }
 
-        // Auto-switch to Claude for vision if user's model doesn't support it
+        // Auto-switch to vision-capable model if user's model doesn't support it
         const VISION_CAPABLE_MODELS = ['claude-sonnet-4.5']; // Add more models here as you test them
         if (imageBuffer && !VISION_CAPABLE_MODELS.includes(userModel)) {
-            console.log(`[AI] Image detected, auto-switching from ${userModel} to claude-sonnet-4.5 for vision`);
-            userModel = 'claude-sonnet-4.5';
+            const visionModel = await settingsManager.getDefaultVisionModel();
+            console.log(`[AI] Image detected, auto-switching from ${userModel} to ${visionModel} for vision`);
+            userModel = visionModel;
         }
 
         if (quotedMsg && quotedMsg.text) {
@@ -128,10 +173,12 @@ module.exports = {
                    'or send/reply to an image with `.ai`';
         }
 
-        // Check API key
-        const API_KEY = process.env.AI_API_KEY;
+        // Get API configuration from settings (with env fallback)
+        const API_KEY = await settingsManager.getApiKey();
+        const API_ENDPOINT = await settingsManager.getApiEndpoint();
+
         if (!API_KEY) {
-            return '*Error:* AI_API_KEY not configured in .env file.';
+            return '*Error:* AI API Key not configured. Please set AI_API_KEY in .env or configure via Dashboard → AI Settings.';
         }
 
         // Start typing indicator
@@ -139,10 +186,15 @@ module.exports = {
 
         try {
             // Call AI API with tool support
-            console.log(`[AI] Starting API call (model: ${userModel})`);
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, message.room, imageBuffer, imageType, message);
+            console.log(`[AI] Starting API call (model: ${userModel}, endpoint: ${API_ENDPOINT})`);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message);
 
             stopTyping();
+
+            // Increment usage count after successful response
+            await whitelistManager.incrementUsage(workingIdentifier);
+            const updatedQuota = await whitelistManager.checkQuota(workingIdentifier);
+            console.log(`[AI] Usage incremented: ${updatedQuota.usageCount}/${updatedQuota.quota} used`);
 
             // null means already sent via baileys (tools were used)
             if (response === null) {
@@ -174,7 +226,7 @@ module.exports = {
 };
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
+async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
     // Load recent conversation memory for context
     let memoryContext = null;
     try {
@@ -697,7 +749,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
 
         if (provider === 'openai') {
             // OpenAI API format - system prompt as first message
-            endpoint = OPENAI_ENDPOINT;
+            endpoint = apiEndpoint; // Use dynamic endpoint
             path = OPENAI_PATH;
 
             // Add system message at the beginning
@@ -731,7 +783,7 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey) {
             };
         } else if (provider === 'anthropic') {
             // Anthropic API format - system as separate field
-            endpoint = ANTHROPIC_ENDPOINT;
+            endpoint = apiEndpoint; // Use dynamic endpoint
             path = ANTHROPIC_PATH;
 
             const payloadObj = {

@@ -1,4 +1,5 @@
 const whitelistManager = require('../whitelistManager');
+const settingsManager = require('../settingsManager');
 
 // Helper to extract mentions from baileys message
 function getMentions(message) {
@@ -26,20 +27,42 @@ module.exports = {
         const mentions = getMentions(message);
 
         if (mentions.length === 0) {
-            return '*Usage:* `.aiadd @mention [name] [--model model]`\n\n' +
-                   'Models:\n' +
+            // Get current defaults to show in usage
+            const defaultModel = await settingsManager.getDefaultModel();
+            const defaultQuota = await settingsManager.getDefaultQuota();
+            const defaultResetPeriod = await settingsManager.getDefaultResetPeriod();
+
+            const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
+            const resetLabel = defaultResetPeriod === 'per5Hours' ? '5h' :
+                              defaultResetPeriod === 'perDay' ? 'day' : 'month';
+
+            return '*Usage:* `.aiadd @mention [name] [--model model] [--quota N] [--reset period]`\n\n' +
+                   '*Models:*\n' +
                    '• `claude` - Claude Sonnet 4.5\n' +
                    '• `qwen` or empty - Qwen3 Coder Next (default)\n\n' +
-                   'Examples:\n' +
+                   '*Quota:* (default: ' + defaultQuota + ')\n' +
+                   '• Any number between 1-10000\n\n' +
+                   '*Reset Period:* (default: ' + resetLabel + ')\n' +
+                   '• `5h` or `5hours` - Every 5 hours\n' +
+                   '• `day` or `daily` - Every day\n' +
+                   '• `month` or `monthly` - Every month\n\n' +
+                   '*Current Defaults:*\n' +
+                   '• Model: ' + modelName + '\n' +
+                   '• Quota: ' + defaultQuota + '\n' +
+                   '• Reset: ' + resetLabel + '\n\n' +
+                   '*Examples:*\n' +
                    '• `.aiadd @6281234567890 John Doe`\n' +
                    '• `.aiadd @6281234567890 Jane --model claude`\n' +
-                   '• `.aiadd @6281234567890` (no name)';
+                   '• `.aiadd @6281234567890 --quota 50 --reset 5h`\n' +
+                   '• `.aiadd @6281234567890 Bob --model claude --quota 200 --reset month`';
         }
 
         // Parse parameters
         const fullText = command.parameters.join(' ');
         let customName = null;
-        let model = 'qwen3-coder-next'; // Default
+        let model = null; // Let whitelistManager get default
+        let quota = null; // Let whitelistManager get default
+        let resetPeriod = null; // Let whitelistManager get default
 
         // Extract --model value
         const modelMatch = fullText.match(/--model\s+(\S+)/);
@@ -54,11 +77,40 @@ module.exports = {
             }
         }
 
-        // Extract name: everything between @mention and --model (or end)
-        // Remove @ mentions and --model part
+        // Extract --quota value
+        const quotaMatch = fullText.match(/--quota\s+(\d+)/);
+        if (quotaMatch) {
+            quota = parseInt(quotaMatch[1]);
+            if (quota < 1 || quota > 10000) {
+                return '*Error:* Quota must be between 1 and 10000.';
+            }
+        }
+
+        // Extract --reset value
+        const resetMatch = fullText.match(/--reset\s+(\S+)/);
+        if (resetMatch) {
+            const resetParam = resetMatch[1].toLowerCase();
+            if (resetParam === '5h' || resetParam === '5hours') {
+                resetPeriod = 'per5Hours';
+            } else if (resetParam === 'day' || resetParam === 'daily') {
+                resetPeriod = 'perDay';
+            } else if (resetParam === 'month' || resetParam === 'monthly') {
+                resetPeriod = 'perMonth';
+            } else {
+                return '*Error:* Invalid reset period. Use `5h`, `day`, or `month`.';
+            }
+        }
+
+        // Extract name: everything between @mention and --flags
         let namePart = fullText.replace(/@\S+/g, '').trim(); // Remove @mentions
         if (modelMatch) {
-            namePart = namePart.replace(/--model\s+\S+/, '').trim(); // Remove --model part
+            namePart = namePart.replace(/--model\s+\S+/, '').trim();
+        }
+        if (quotaMatch) {
+            namePart = namePart.replace(/--quota\s+\d+/, '').trim();
+        }
+        if (resetMatch) {
+            namePart = namePart.replace(/--reset\s+\S+/, '').trim();
         }
 
         if (namePart) {
@@ -74,14 +126,21 @@ module.exports = {
                 const lid = mention.jid; // This is LID format from mention
                 const pushName = customName || null;
 
-                // Save LID directly (no JID resolution)
-                const normalized = await whitelistManager.addNumber(lid, model, pushName);
+                // Save LID directly - whitelistManager will get defaults if null
+                const normalized = await whitelistManager.addNumber(lid, model, pushName, quota, resetPeriod);
                 const displayNumber = '@' + normalized.split('@')[0];
                 added.push({ display: displayNumber, jid: normalized });
 
-                // Log with LID and pushName
+                // Get actual values used (including defaults)
+                const userInfo = (await whitelistManager.getAll()).find(u => u.number === normalized);
+                const actualModel = userInfo?.model || 'qwen3-coder-next';
+                const actualQuota = userInfo?.quota || 100;
+                const actualReset = userInfo?.resetPeriod || 'perDay';
+
+                // Log with actual values
                 const logName = pushName ? ` (${pushName})` : '';
-                console.log(`[AIADD] Added ${normalized}${logName} with model ${model}`);
+                const resetLabel = actualReset === 'per5Hours' ? '5h' : actualReset === 'perDay' ? 'day' : 'month';
+                console.log(`[AIADD] Added ${normalized}${logName}: ${actualModel}, ${actualQuota}/${resetLabel}`);
             } catch (error) {
                 console.error(`[AIADD] Failed to add ${mention.jid}:`, error.message);
                 errors.push(mention.jid);
@@ -92,11 +151,25 @@ module.exports = {
             return '*Error:* Failed to add all numbers.';
         }
 
+        // Get actual settings for response
+        const firstAdded = added[0].jid;
+        const userInfo = (await whitelistManager.getAll()).find(u => u.number === firstAdded);
+        const actualModel = userInfo?.model || 'qwen3-coder-next';
+        const actualQuota = userInfo?.quota || 100;
+        const actualReset = userInfo?.resetPeriod || 'perDay';
+
         const numberList = added.map(u => u.display).join('\n');
         const mentionList = added.map(u => u.jid);
+        const resetLabel = actualReset === 'per5Hours' ? 'every 5 hours' :
+                          actualReset === 'perDay' ? 'daily' : 'monthly';
 
         return {
-            text: `✅ *Added to AI Whitelist*\n\n${numberList}`,
+            text: `✅ *Added to AI Whitelist*\n\n` +
+                  `${numberList}\n\n` +
+                  `*Settings:*\n` +
+                  `• Model: ${actualModel}\n` +
+                  `• Quota: ${actualQuota} requests\n` +
+                  `• Reset: ${resetLabel}`,
             mentions: mentionList
         };
     },
