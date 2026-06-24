@@ -565,15 +565,20 @@ Instead write conversationally for mobile.`;
         // Send progress message only for first ALLOWED tool
         if (allowedToolUses.length > 0) {
             const firstTool = allowedToolUses[0];
+
+            // Get progress message from tool metadata (dynamic)
+            const toolMetadata = tools.getMetadata(firstTool.name);
             let progressText = '';
-            if (firstTool.name === 'web_search') {
-                progressText = `🔍 Using web search: _${firstTool.input.query}_`;
-            } else if (firstTool.name === 'fetch_url') {
-                progressText = `📄 Fetching URL: _${firstTool.input.url}_`;
-            } else if (firstTool.name === 'get_time') {
-                progressText = `🕐 Getting current time...`;
-            } else if (firstTool.name === 'image_search') {
-                progressText = `🖼️ Searching images: _${firstTool.input.query}_`;
+
+            if (toolMetadata && toolMetadata.progressMessage) {
+                // Generate progress message from tool metadata
+                try {
+                    progressText = toolMetadata.progressMessage(firstTool.input);
+                } catch (error) {
+                    console.warn(`[AI] Failed to generate progress message for ${firstTool.name}:`, error.message);
+                    // Fallback to generic message
+                    progressText = `${toolMetadata.icon || '⚙️'} Using ${firstTool.name}...`;
+                }
             }
 
             if (progressText) {
@@ -618,11 +623,16 @@ Instead write conversationally for mobile.`;
         // Then execute allowed tools
         for (const toolUse of allowedToolUses) {
             let toolResult;
-            if (toolUse.name === 'image_search') {
-                console.log('[AI] Searching images:', toolUse.input.query);
-                try {
-                    // Call image search tool
-                    toolResult = await tools.executeTool(toolUse.name, toolUse.input);
+
+            try {
+                console.log(`[AI] Executing tool: ${toolUse.name}`);
+                toolResult = await tools.executeTool(toolUse.name, toolUse.input);
+
+                // Check if tool has special result type (e.g., image)
+                const toolMetadata = tools.getMetadata(toolUse.name);
+
+                if (toolMetadata && toolMetadata.resultType === 'image') {
+                    // Handle image result type
                     const apiData = JSON.parse(toolResult);
 
                     if (apiData.success && apiData.images && apiData.images.length > 0) {
@@ -661,25 +671,14 @@ Instead write conversationally for mobile.`;
                             query: toolUse.input.query
                         });
                     }
-                } catch (error) {
-                    console.error('[AI] Image search failed:', error.message);
-                    toolResult = JSON.stringify({
-                        error: error.message,
-                        query: toolUse.input.query
-                    });
                 }
-            } else {
-                // Execute tool using centralized function
-                try {
-                    console.log(`[AI] Executing tool: ${toolUse.name}`);
-                    toolResult = await tools.executeTool(toolUse.name, toolUse.input);
-                } catch (error) {
-                    console.error(`[AI] Tool execution failed (${toolUse.name}):`, error.message);
-                    toolResult = JSON.stringify({
-                        error: error.message,
-                        tool: toolUse.name
-                    });
-                }
+
+            } catch (error) {
+                console.error(`[AI] Tool execution failed (${toolUse.name}):`, error.message);
+                toolResult = JSON.stringify({
+                    error: error.message,
+                    tool: toolUse.name
+                });
             }
 
             if (toolResult) {
@@ -774,14 +773,14 @@ Instead write conversationally for mobile.`;
     finalText = finalText.replace(/\*\*/g, ''); // Remove double asterisks (markdown bold)
 
     // Remove tool tags that might leak through (especially when tool is blocked)
-    finalText = finalText.replace(/<web_search>\s*/gi, '');
-    finalText = finalText.replace(/<\/web_search>\s*/gi, '');
-    finalText = finalText.replace(/<fetch_url>\s*/gi, '');
-    finalText = finalText.replace(/<\/fetch_url>\s*/gi, '');
-    finalText = finalText.replace(/<get_time>\s*/gi, '');
-    finalText = finalText.replace(/<\/get_time>\s*/gi, '');
-    finalText = finalText.replace(/<image_search>\s*/gi, '');
-    finalText = finalText.replace(/<\/image_search>\s*/gi, '');
+    // Dynamic cleanup based on all registered tools
+    const allToolNames = tools.getToolNames();
+    for (const toolName of allToolNames) {
+        // Escape special regex characters in tool name
+        const escapedName = toolName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        finalText = finalText.replace(new RegExp(`<${escapedName}>\\s*`, 'gi'), '');
+        finalText = finalText.replace(new RegExp(`</${escapedName}>\\s*`, 'gi'), '');
+    }
 
     // If response is empty after cleanup, provide explanation
     if (!finalText || finalText.trim().length === 0) {

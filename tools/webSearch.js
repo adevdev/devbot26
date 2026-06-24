@@ -1,55 +1,84 @@
 /**
  * Web Search Tool - Uses EXA API
+ * Self-contained modular tool
  */
 
-async function webSearch(query) {
-    try {
-        const response = await fetch('https://mcp.exa.ai/mcp', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json, text/event-stream'
-            },
-            body: JSON.stringify({
-                jsonrpc: '2.0',
-                id: 1,
-                method: 'tools/call',
-                params: {
-                    name: 'web_search_exa',
-                    arguments: {
-                        query: query,
-                        type: 'auto',
-                        numResults: 5,
-                        livecrawl: 'fallback'
-                    }
+module.exports = {
+    // Tool definition for AI API
+    definition: {
+        name: 'web_search',
+        description: 'Search the web for current information, news, events, prices, and real-time data. Use this tool for ANY query about current events or time-sensitive information. Returns search results with sources.',
+        input_schema: {
+            type: 'object',
+            properties: {
+                query: {
+                    type: 'string',
+                    description: 'The search query. Be specific and include relevant keywords, dates, or context.'
                 }
-            }),
-            signal: AbortSignal.timeout(25000) // 25s timeout
-        });
+            },
+            required: ['query']
+        }
+    },
 
-        if (!response.ok) {
-            console.error('[WebSearch] EXA returned HTTP', response.status);
+    // Metadata for UI/UX
+    metadata: {
+        icon: '🔍',
+        progressMessage: (input) => `Using web search: _${input.query}_`,
+        resultType: 'text'
+    },
+
+    // Execution logic
+    execute: async function(input) {
+        const query = input.query;
+
+        try {
+            const response = await fetch('https://mcp.exa.ai/mcp', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json, text/event-stream'
+                },
+                body: JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: 1,
+                    method: 'tools/call',
+                    params: {
+                        name: 'web_search_exa',
+                        arguments: {
+                            query: query,
+                            type: 'auto',
+                            numResults: 5,
+                            livecrawl: 'fallback'
+                        }
+                    }
+                }),
+                signal: AbortSignal.timeout(25000) // 25s timeout
+            });
+
+            if (!response.ok) {
+                console.error('[WebSearch] EXA returned HTTP', response.status);
+                return 'Search unavailable. Please answer based on your training data.';
+            }
+
+            const body = await response.text();
+
+            // Parse response - can be direct JSON or SSE format
+            const result = parseExaResponse(body);
+
+            if (!result) {
+                console.error('[WebSearch] No usable results from EXA');
+                return 'No search results found. Please answer based on your training data.';
+            }
+
+            console.log('[WebSearch] Using EXA - results retrieved');
+            return result;
+
+        } catch (error) {
+            console.error('[WebSearch] EXA error:', error.message);
             return 'Search unavailable. Please answer based on your training data.';
         }
-
-        const body = await response.text();
-
-        // Parse response - can be direct JSON or SSE format
-        const result = parseExaResponse(body);
-
-        if (!result) {
-            console.error('[WebSearch] No usable results from EXA');
-            return 'No search results found. Please answer based on your training data.';
-        }
-
-        console.log('[WebSearch] Using EXA - results retrieved');
-        return result;
-
-    } catch (error) {
-        console.error('[WebSearch] EXA error:', error.message);
-        return 'Search unavailable. Please answer based on your training data.';
     }
-}
+};
 
 // Parse EXA response (handles both JSON and SSE formats)
 function parseExaResponse(body) {
@@ -86,5 +115,3 @@ function parseExaResponse(body) {
 
     return null;
 }
-
-module.exports = webSearch;

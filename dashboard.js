@@ -1148,46 +1148,42 @@ class BotDashboard {
         // API: Get all tools
         this.app.get('/api/tools', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const fs = require('fs').promises;
-                const path = require('path');
-                const toolsPath = path.join(__dirname, 'tools', 'definitions.js');
-
-                // Read static tools file
-                const content = await fs.readFile(toolsPath, 'utf-8');
-
-                // Extract toolDefinitions array using regex
-                const match = content.match(/const toolDefinitions = (\[[\s\S]*?\]);/);
-                if (!match) {
-                    return res.status(500).json({ success: false, error: 'Could not parse tools file' });
-                }
-
-                const staticTools = eval(match[1]);
-
-                // Add metadata to static tools
-                const staticWithMeta = staticTools.map(tool => ({
-                    ...tool,
-                    temporary: false,
-                    source: 'tools/definitions.js'
-                }));
-
-                // Get temporary tools
+                const tools = require('./tools');
                 const temporaryToolsManager = require('./temporaryToolsManager');
-                const tempTools = temporaryToolsManager.getAll();
 
-                // Add only definition fields for temporary tools (for consistency with static)
-                const tempWithMeta = tempTools.map(tool => ({
-                    name: tool.name,
-                    description: tool.description,
-                    input_schema: tool.input_schema,
-                    temporary: true,
-                    source: tool.source,
-                    addedAt: tool.addedAt
-                }));
+                // Get all tool definitions (static + temporary, already merged)
+                const allDefinitions = tools.getAllDefinitions();
 
-                // Merge: static first, then temporary
-                const allTools = [...staticWithMeta, ...tempWithMeta];
+                // Add metadata to distinguish static vs temporary tools
+                const toolsWithMeta = allDefinitions.map(toolDef => {
+                    const isTemporary = temporaryToolsManager.has(toolDef.name);
 
-                res.json({ success: true, tools: allTools });
+                    if (isTemporary) {
+                        // Get temporary tool details
+                        const tempTool = temporaryToolsManager.getAll().find(t => t.name === toolDef.name);
+                        return {
+                            name: toolDef.name,
+                            description: toolDef.description,
+                            input_schema: toolDef.input_schema,
+                            temporary: true,
+                            source: tempTool.source,
+                            addedAt: tempTool.addedAt
+                        };
+                    } else {
+                        // Static tool from tools/ directory
+                        const source = tools.getToolSource(toolDef.name);
+
+                        return {
+                            name: toolDef.name,
+                            description: toolDef.description,
+                            input_schema: toolDef.input_schema,
+                            temporary: false,
+                            source: source || 'unknown'
+                        };
+                    }
+                });
+
+                res.json({ success: true, tools: toolsWithMeta });
             } catch (error) {
                 this.addLog('error', `Failed to get tools: ${error.message}`);
                 res.status(500).json({ success: false, error: error.message });
