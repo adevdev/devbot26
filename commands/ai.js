@@ -626,7 +626,17 @@ Instead write conversationally for mobile.`;
 
             try {
                 console.log(`[AI] Executing tool: ${toolUse.name}`);
-                toolResult = await tools.executeTool(toolUse.name, toolUse.input);
+
+                // Build context object for tools that need conversation context
+                const toolContext = {
+                    message: userMessage,
+                    room: roomJid,
+                    group: group || null,
+                    workingIdentifier: workingIdentifier
+                };
+
+                // Execute tool with context
+                toolResult = await tools.executeTool(toolUse.name, toolUse.input, toolContext);
 
                 // Check if tool has special result type (e.g., image)
                 const toolMetadata = tools.getMetadata(toolUse.name);

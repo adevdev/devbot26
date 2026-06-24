@@ -63,9 +63,10 @@ function getAllDefinitions() {
  * Execute a tool (temporary or static)
  * @param {string} name - Tool name
  * @param {object} input - Tool input parameters
+ * @param {object} context - Optional context (message, sender, room info)
  * @returns {Promise<string>} - Tool result
  */
-async function executeTool(name, input) {
+async function executeTool(name, input, context = null) {
     // Check if it's a temporary tool first (priority)
     if (temporaryToolsManager.has(name)) {
         return await temporaryToolsManager.execute(name, input);
@@ -77,7 +78,8 @@ async function executeTool(name, input) {
         throw new Error(`Unknown tool: ${name}`);
     }
 
-    return await tool.execute(input);
+    // Pass context to tool if it accepts it
+    return await tool.execute(input, context);
 }
 
 /**
