@@ -582,6 +582,10 @@
                             <small style="opacity: 0.7;">Vision Fallback:</small>
                             <div id="defaultVisionModel" style="color: #0f0; font-weight: bold;">Loading...</div>
                         </div>
+                        <div>
+                            <small style="opacity: 0.7;">Default Enabled Tools:</small>
+                            <div id="defaultEnabledTools" style="color: #0f0; font-size: 0.85rem; margin-top: 0.25rem;">Loading...</div>
+                        </div>
                     </div>
                     <div style="border-top: 1px solid #0f0; padding-top: 1rem; margin-top: 1rem;">
                         <div style="margin-bottom: 1rem;">
@@ -616,7 +620,7 @@
                         <h3 style="color: #0f0; margin: 0;">API Configuration</h3>
                         <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit API</button>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 2fr; gap: 1rem;">
+                    <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 1rem;">
                         <div>
                             <small style="opacity: 0.7;">API Endpoint:</small>
                             <div id="apiEndpoint" style="color: #0f0; font-weight: bold; word-break: break-all;">Loading...</div>
@@ -624,6 +628,10 @@
                         <div>
                             <small style="opacity: 0.7;">API Key:</small>
                             <div id="apiKey" style="color: #0f0; font-weight: bold; font-family: monospace;">Loading...</div>
+                        </div>
+                        <div>
+                            <small style="opacity: 0.7;">Request Timeout:</small>
+                            <div id="apiTimeout" style="color: #0f0; font-weight: bold;">Loading...</div>
                         </div>
                     </div>
                     <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
@@ -723,12 +731,13 @@
                             <th>Model</th>
                             <th>Usage / Quota</th>
                             <th>Reset Period</th>
+                            <th>Tools</th>
                             <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody id="whitelistTableBody">
                         <tr>
-                            <td colspan="6" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
+                            <td colspan="7" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -908,6 +917,15 @@
                     <option value="perMonth">Every Month</option>
                 </select>
             </div>
+            <div class="input-group">
+                <label>Enabled Tools:</label>
+                <div id="editWhitelistTools" style="max-height: 200px; overflow-y: auto; border: 1px solid #0f0; padding: 0.5rem; background: #000;">
+                    <small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">
+                        Select which tools this user can use. Empty = all tools enabled.
+                    </small>
+                    <div style="opacity: 0.6;">Loading tools...</div>
+                </div>
+            </div>
             <div class="modal-buttons">
                 <button class="btn" id="editWhitelistCancel">Cancel</button>
                 <button class="btn" id="editWhitelistSubmit">Update</button>
@@ -1067,9 +1085,14 @@
                     Customize how the AI introduces itself and its personality
                 </small>
             </div>
-                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
-                    Used automatically when user sends images but their model doesn't support vision
-                </small>
+            <div class="input-group">
+                <label>Default Enabled Tools:</label>
+                <div id="editDefaultTools" style="max-height: 200px; overflow-y: auto; border: 1px solid #0f0; padding: 0.5rem; background: #000;">
+                    <small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">
+                        Select which tools new users will have enabled by default.
+                    </small>
+                    <div style="opacity: 0.6;">Loading tools...</div>
+                </div>
             </div>
             <div class="modal-buttons">
                 <button class="btn" id="editDefaultsCancel">Cancel</button>
@@ -1185,6 +1208,13 @@
                 <input type="password" id="editApiKey" placeholder="sk-..." style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
                 <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
                     API key for authentication. Leave empty to use AI_API_KEY from .env
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Request Timeout (seconds):</label>
+                <input type="number" id="editApiTimeout" placeholder="120" min="10" max="600" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Maximum time to wait for AI API response (10-600 seconds). Default: 120s
                 </small>
             </div>
             <div style="background: #1a1a1a; border: 1px solid #ff0; padding: 0.75rem; margin: 1rem 0; border-radius: 4px;">

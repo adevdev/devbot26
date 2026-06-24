@@ -642,7 +642,7 @@ async function loadAIDefaults() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, defaultEnabledTools } = data.defaults;
 
             // Store default model ID globally for use in other functions
             window.defaultModelId = defaultModel;
@@ -666,11 +666,23 @@ async function loadAIDefaults() {
             const resetDisplay = defaultResetPeriod === 'per5Hours' ? 'Every 5 Hours' :
                                 defaultResetPeriod === 'perDay' ? 'Every Day' : 'Every Month';
 
+            // Format enabled tools display
+            const enabledTools = defaultEnabledTools || [];
+            let toolsDisplay;
+            if (enabledTools.length === 0) {
+                toolsDisplay = '<span style="opacity: 0.5; color: #f00;">No tools</span>';
+            } else {
+                const toolsList = enabledTools.slice(0, 5).join(', ');
+                const moreCount = enabledTools.length > 5 ? ` +${enabledTools.length - 5} more` : '';
+                toolsDisplay = `${toolsList}${moreCount}`;
+            }
+
             // Update UI
             document.getElementById('defaultModel').textContent = modelDisplay;
             document.getElementById('defaultQuota').textContent = defaultQuota + ' requests';
             document.getElementById('defaultReset').textContent = resetDisplay;
             document.getElementById('defaultVisionModel').textContent = visionDisplay;
+            document.getElementById('defaultEnabledTools').innerHTML = toolsDisplay;
             document.getElementById('aiIdentityDisplay').textContent = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
 
             // Update max memory
@@ -751,7 +763,7 @@ async function showEditDefaultsModal() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, aiIdentity } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, aiIdentity, defaultEnabledTools } = data.defaults;
 
             // Populate model dropdowns dynamically
             await populateModelDropdown('editDefaultModel', { selectedValue: defaultModel });
@@ -763,6 +775,38 @@ async function showEditDefaultsModal() {
             document.getElementById('editDefaultQuota').value = defaultQuota;
             document.getElementById('editDefaultResetPeriod').value = defaultResetPeriod;
             document.getElementById('editAiIdentity').value = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
+
+            // Load and populate tools
+            const enabledTools = defaultEnabledTools || [];
+            try {
+                const toolsResponse = await fetch('/api/tools', { credentials: 'same-origin' });
+                const toolsData = await toolsResponse.json();
+
+                if (toolsData.success && toolsData.tools) {
+                    const toolsContainer = document.getElementById('editDefaultTools');
+                    if (toolsData.tools.length === 0) {
+                        toolsContainer.innerHTML = '<small style="opacity: 0.6;">No tools available</small>';
+                    } else {
+                        let html = '<small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">Select which tools new users will have enabled by default.</small>';
+                        toolsData.tools.forEach(tool => {
+                            const checked = enabledTools.includes(tool.name) ? 'checked' : '';
+                            const badge = tool.temporary ? ' <span class="badge temp" style="font-size: 0.65rem;">TEMP</span>' : '';
+                            html += `
+                                <label style="display: flex; align-items: center; margin-bottom: 0.5rem; cursor: pointer;">
+                                    <input type="checkbox" name="defaultEnabledTool" value="${tool.name}" ${checked}
+                                           style="margin-right: 0.75rem; cursor: pointer; width: 16px; height: 16px;
+                                                  accent-color: #0f0; background: #000; border: 1px solid #0f0;">
+                                    <span style="flex: 1;">${tool.name}${badge}</span>
+                                </label>
+                            `;
+                        });
+                        toolsContainer.innerHTML = html;
+                    }
+                }
+            } catch (toolsError) {
+                console.error('Failed to load tools:', toolsError);
+                document.getElementById('editDefaultTools').innerHTML = '<small style="color: #f00;">Failed to load tools</small>';
+            }
 
             document.getElementById('editDefaultsModal').showModal();
         } else {
@@ -828,7 +872,7 @@ async function loadApiConfig() {
         const data = await response.json();
 
         if (data.success) {
-            const { apiEndpoint, apiKey, isOverridden } = data.config;
+            const { apiEndpoint, apiKey, apiTimeout, isOverridden } = data.config;
 
             // Display endpoint
             document.getElementById('apiEndpoint').textContent = apiEndpoint || 'Not configured';
@@ -840,6 +884,10 @@ async function loadApiConfig() {
             } else {
                 document.getElementById('apiKey').textContent = 'Not configured';
             }
+
+            // Display timeout in seconds
+            const timeoutSeconds = Math.round(apiTimeout / 1000);
+            document.getElementById('apiTimeout').textContent = `${timeoutSeconds}s`;
 
             // Show source and revert button
             const sourceEl = document.getElementById('apiConfigSource');
@@ -857,11 +905,13 @@ async function loadApiConfig() {
         } else {
             document.getElementById('apiEndpoint').textContent = 'Error loading';
             document.getElementById('apiKey').textContent = 'Error loading';
+            document.getElementById('apiTimeout').textContent = 'Error loading';
         }
     } catch (error) {
         console.error('Error loading API config:', error);
         document.getElementById('apiEndpoint').textContent = 'Error loading';
         document.getElementById('apiKey').textContent = 'Error loading';
+        document.getElementById('apiTimeout').textContent = 'Error loading';
     }
 }
 
@@ -877,6 +927,10 @@ async function showEditApiConfigModal() {
             // Only show stored override values, not .env fallback
             document.getElementById('editApiEndpoint').value = data.config.storedEndpoint || '';
             document.getElementById('editApiKey').value = data.config.storedKey || '';
+
+            // Populate timeout in seconds
+            const timeoutSeconds = Math.round(data.config.apiTimeout / 1000);
+            document.getElementById('editApiTimeout').value = timeoutSeconds;
 
             document.getElementById('editApiConfigModal').showModal();
         } else {
@@ -1362,11 +1416,11 @@ function renderWhitelist(users) {
     const tbody = document.getElementById('whitelistTableBody');
 
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; opacity: 0.6;">No users in AI whitelist</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No users in AI whitelist</td></tr>';
         return;
     }
 
-    tbody.innerHTML = users.map(user => {
+    tbody.innerHTML = users.map((user, index) => {
         // Handle both old format (string) and new format (object)
         const number = typeof user === 'string' ? user : user.number;
         const model = typeof user === 'string' ? (window.defaultModelId || 'unknown') : user.model;
@@ -1375,6 +1429,11 @@ function renderWhitelist(users) {
         const quota = typeof user === 'object' && user.quota ? user.quota : 100;
         const usageCount = typeof user === 'object' && user.usageCount ? user.usageCount : 0;
         const resetPeriod = typeof user === 'object' && user.resetPeriod ? user.resetPeriod : 'perDay';
+        const enabledTools = typeof user === 'object' && user.enabledTools ? user.enabledTools : [];
+
+        // Store in global array for easy access
+        if (!window.whitelistUserData) window.whitelistUserData = {};
+        window.whitelistUserData[number] = { enabledTools };
 
         // Extract JID number (before @ symbol)
         const jidNumber = jid.split('@')[0];
@@ -1401,6 +1460,16 @@ function renderWhitelist(users) {
         const usagePercent = (usageCount / quota) * 100;
         const usageColor = usagePercent >= 90 ? '#f00' : usagePercent >= 70 ? '#ff0' : '#0f0';
 
+        // Format enabled tools display
+        let toolsDisplay;
+        if (enabledTools.length === 0) {
+            toolsDisplay = '<span style="opacity: 0.5; color: #f00;">No tools</span>';
+        } else {
+            const toolsList = enabledTools.slice(0, 3).join(', ');
+            const moreCount = enabledTools.length > 3 ? ` +${enabledTools.length - 3}` : '';
+            toolsDisplay = `<span style="font-size: 0.85rem;">${toolsList}${moreCount}</span>`;
+        }
+
         return `
             <tr>
                 <td style="font-family: monospace; font-size: 0.85rem;">${jidNumber}</td>
@@ -1408,8 +1477,9 @@ function renderWhitelist(users) {
                 <td><span class="badge">${modelDisplay}</span></td>
                 <td style="text-align: center; color: ${usageColor};">${usageCount}/${quota}</td>
                 <td style="text-align: center;"><small>${resetDisplay}</small></td>
+                <td style="font-size: 0.85rem;">${toolsDisplay}</td>
                 <td>
-                    <button class="btn btn-small" onclick="showEditWhitelistModal('${encodedNumber}', '${encodedModel}', '${encodedPushName}', ${encodedQuota}, '${encodedResetPeriod}', ${user.usageCount || 0})" style="margin-right: 0.5rem;">Edit</button>
+                    <button class="btn btn-small" onclick="showEditWhitelistModalFromNumber('${encodedNumber}', '${encodedModel}', '${encodedPushName}', ${encodedQuota}, '${encodedResetPeriod}', ${user.usageCount || 0})" style="margin-right: 0.5rem;">Edit</button>
                     <button class="btn btn-small danger" onclick="removeWhitelistNumber('${encodedNumber}')">Remove</button>
                 </td>
             </tr>
@@ -1417,10 +1487,19 @@ function renderWhitelist(users) {
     }).join('');
 }
 
+// Wrapper function to get enabledTools from global storage
+async function showEditWhitelistModalFromNumber(encodedNumber, encodedModel, encodedPushName, quota, resetPeriod, usageCount) {
+    const number = decodeURIComponent(encodedNumber);
+    const enabledTools = window.whitelistUserData && window.whitelistUserData[number]
+        ? window.whitelistUserData[number].enabledTools
+        : [];
+    await showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName, quota, resetPeriod, usageCount, enabledTools);
+}
+
 // Render whitelist error
 function renderWhitelistError(message) {
     const tbody = document.getElementById('whitelistTableBody');
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
 
 // Show add whitelist modal
@@ -1457,7 +1536,7 @@ async function showAddWhitelistModal() {
 }
 
 // Show edit whitelist modal
-async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay', usageCount = 0) {
+async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay', usageCount = 0, enabledTools = []) {
     const number = decodeURIComponent(encodedNumber);
     const model = decodeURIComponent(encodedModel);
     const pushName = encodedPushName ? decodeURIComponent(encodedPushName) : '';
@@ -1471,6 +1550,37 @@ async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushNa
 
     // Populate model dropdown dynamically
     await populateModelDropdown('editWhitelistModel', { selectedValue: model });
+
+    // Load and populate tools
+    try {
+        const response = await fetch('/api/tools', { credentials: 'same-origin' });
+        const data = await response.json();
+
+        if (data.success && data.tools) {
+            const toolsContainer = document.getElementById('editWhitelistTools');
+            if (data.tools.length === 0) {
+                toolsContainer.innerHTML = '<small style="opacity: 0.6;">No tools available</small>';
+            } else {
+                let html = '<small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">Select which tools this user can use. Uncheck all to disable tools.</small>';
+                data.tools.forEach(tool => {
+                    const checked = enabledTools.includes(tool.name) ? 'checked' : '';
+                    const badge = tool.temporary ? ' <span class="badge temp" style="font-size: 0.65rem;">TEMP</span>' : '';
+                    html += `
+                        <label style="display: flex; align-items: center; margin-bottom: 0.5rem; cursor: pointer;">
+                            <input type="checkbox" name="enabledTool" value="${tool.name}" ${checked}
+                                   style="margin-right: 0.75rem; cursor: pointer; width: 16px; height: 16px;
+                                          accent-color: #0f0; background: #000; border: 1px solid #0f0;">
+                            <span style="flex: 1;">${tool.name}${badge}</span>
+                        </label>
+                    `;
+                });
+                toolsContainer.innerHTML = html;
+            }
+        }
+    } catch (error) {
+        console.error('Failed to load tools:', error);
+        document.getElementById('editWhitelistTools').innerHTML = '<small style="color: #f00;">Failed to load tools</small>';
+    }
 
     // Store original number for API call
     modal.dataset.number = number;
@@ -1745,6 +1855,10 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     const usageCount = parseInt(document.getElementById('editWhitelistUsage').value);
     const resetPeriod = document.getElementById('editWhitelistResetPeriod').value;
 
+    // Collect enabled tools from checkboxes
+    const enabledToolsCheckboxes = document.querySelectorAll('input[name="enabledTool"]:checked');
+    const enabledTools = Array.from(enabledToolsCheckboxes).map(cb => cb.value);
+
     if (!newNumber) {
         await showAlert('Error', 'Phone number is required');
         return;
@@ -1779,7 +1893,8 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
                 pushName: pushName || null,
                 quota,
                 usageCount,
-                resetPeriod
+                resetPeriod,
+                enabledTools
             })
         });
 
@@ -1809,6 +1924,10 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
     const defaultVisionModel = document.getElementById('editDefaultVisionModel').value;
     const aiIdentity = document.getElementById('editAiIdentity').value.trim();
 
+    // Collect enabled tools from checkboxes
+    const enabledToolsCheckboxes = document.querySelectorAll('input[name="defaultEnabledTool"]:checked');
+    const defaultEnabledTools = Array.from(enabledToolsCheckboxes).map(cb => cb.value);
+
     // Validate quota
     if (isNaN(defaultQuota) || defaultQuota < 1 || defaultQuota > 10000) {
         await showAlert('Error', 'Quota must be between 1 and 10000');
@@ -1831,7 +1950,8 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
                 defaultQuota,
                 defaultResetPeriod,
                 defaultVisionModel,
-                aiIdentity
+                aiIdentity,
+                defaultEnabledTools
             })
         });
 
@@ -1947,6 +2067,16 @@ document.getElementById('editApiConfigCancel').addEventListener('click', () => {
 document.getElementById('editApiConfigSubmit').addEventListener('click', async () => {
     const apiEndpoint = document.getElementById('editApiEndpoint').value.trim();
     const apiKey = document.getElementById('editApiKey').value.trim();
+    const apiTimeoutSeconds = parseInt(document.getElementById('editApiTimeout').value);
+
+    // Validate timeout
+    if (isNaN(apiTimeoutSeconds) || apiTimeoutSeconds < 10 || apiTimeoutSeconds > 600) {
+        await showAlert('Error', 'Timeout must be between 10 and 600 seconds');
+        return;
+    }
+
+    // Convert to milliseconds
+    const apiTimeout = apiTimeoutSeconds * 1000;
 
     try {
         const response = await fetch('/api/ai-settings/api-config', {
@@ -1955,7 +2085,8 @@ document.getElementById('editApiConfigSubmit').addEventListener('click', async (
             credentials: 'same-origin',
             body: JSON.stringify({
                 apiEndpoint: apiEndpoint || null,
-                apiKey: apiKey || null
+                apiKey: apiKey || null,
+                apiTimeout: apiTimeout
             })
         });
 

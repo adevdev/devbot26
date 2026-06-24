@@ -274,7 +274,7 @@ module.exports = {
         try {
             // Call AI API with tool support
             console.log(`[AI] Starting API call (model: ${userModel}, endpoint: ${API_ENDPOINT})`);
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message, group);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message, group, workingIdentifier);
 
             stopTyping();
 
@@ -313,7 +313,7 @@ module.exports = {
 };
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null) {
+async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null, workingIdentifier = null) {
     // Load recent conversation memory for context
     let memoryContext = null;
     try {
@@ -512,7 +512,18 @@ Instead write conversationally for mobile.`;
     ];
 
     // Define tools (static + temporary merged)
-    const toolDefinitions = tools.getAllDefinitions();
+    let toolDefinitions = tools.getAllDefinitions();
+
+    // Filter tools based on user's enabled tools
+    const userEnabledTools = await whitelistManager.getEnabledTools(workingIdentifier || message.sender.id);
+    if (userEnabledTools && userEnabledTools.length > 0) {
+        // User has specific tools enabled - filter to only those
+        toolDefinitions = toolDefinitions.filter(tool => userEnabledTools.includes(tool.name));
+        console.log(`[AI] User ${workingIdentifier || message.sender.id} has ${userEnabledTools.length} enabled tools: ${userEnabledTools.join(', ')}`);
+    } else {
+        // Empty array = all tools enabled (default)
+        console.log(`[AI] User ${workingIdentifier || message.sender.id} has all tools enabled`);
+    }
 
     // Tool calling loop (max iterations to prevent infinite loops)
     let response;
@@ -878,6 +889,9 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey, apiEndpoint) {
             // Get model info and provider config dynamically
             const settingsManager = require('../settingsManager');
 
+            // Get API timeout from settings
+            const apiTimeout = await settingsManager.getApiTimeout();
+
             // Get the model to determine its provider
             const modelInfo = await settingsManager.getModelById(model);
             if (!modelInfo) {
@@ -1016,9 +1030,9 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey, apiEndpoint) {
         });
 
         // Set timeout
-        req.setTimeout(45000, () => {
+        req.setTimeout(apiTimeout, () => {
             req.destroy();
-            reject(new Error('API request timeout (45s)'));
+            reject(new Error(`API request timeout (${apiTimeout / 1000}s)`));
         });
 
         req.write(payload);

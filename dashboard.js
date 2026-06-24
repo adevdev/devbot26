@@ -757,7 +757,7 @@ class BotDashboard {
         this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { number } = req.params;
-                const { model, newNumber, pushName, quota, usageCount, resetPeriod } = req.body;
+                const { model, newNumber, pushName, quota, usageCount, resetPeriod, enabledTools } = req.body;
 
                 // Validate model dynamically from settings
                 const settingsManager = require('./settingsManager');
@@ -795,6 +795,9 @@ class BotDashboard {
                 const validResetPeriods = ['per5Hours', 'perDay', 'perMonth'];
                 const selectedResetPeriod = resetPeriod && validResetPeriods.includes(resetPeriod) ? resetPeriod : 'perDay';
 
+                // Validate enabledTools (should be array of tool names)
+                const selectedEnabledTools = Array.isArray(enabledTools) ? enabledTools : [];
+
                 // If number is being changed
                 if (newNumber && newNumber !== decodedOldNumber) {
                     // Validate new number format
@@ -814,6 +817,9 @@ class BotDashboard {
                         await whitelistManager.setUsageCount(normalized, selectedUsageCount);
                     }
 
+                    // Update enabled tools
+                    await whitelistManager.updateEnabledTools(normalized, selectedEnabledTools);
+
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
                     const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
                     this.addLog('success', `Updated whitelist: ${decodedOldNumber} → ${normalized}${logName} (${model}, ${selectedQuota}/${resetLabel})`);
@@ -825,7 +831,8 @@ class BotDashboard {
                         pushName: sanitizedPushName,
                         quota: selectedQuota,
                         usageCount: selectedUsageCount,
-                        resetPeriod: selectedResetPeriod
+                        resetPeriod: selectedResetPeriod,
+                        enabledTools: selectedEnabledTools
                     });
                 } else {
                     // Just update settings for same number
@@ -833,6 +840,9 @@ class BotDashboard {
 
                     // Update usage count
                     await whitelistManager.setUsageCount(decodedOldNumber, selectedUsageCount);
+
+                    // Update enabled tools
+                    await whitelistManager.updateEnabledTools(decodedOldNumber, selectedEnabledTools);
 
                     const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
                     const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
@@ -845,7 +855,8 @@ class BotDashboard {
                         pushName: sanitizedPushName,
                         quota: selectedQuota,
                         usageCount: selectedUsageCount,
-                        resetPeriod: selectedResetPeriod
+                        resetPeriod: selectedResetPeriod,
+                        enabledTools: selectedEnabledTools
                     });
                 }
             } catch (error) {
@@ -887,6 +898,7 @@ class BotDashboard {
                         defaultQuota: defaults.defaultQuota,
                         defaultResetPeriod: defaults.defaultResetPeriod,
                         defaultVisionModel: defaults.defaultVisionModel,
+                        defaultEnabledTools: defaults.defaultEnabledTools || [],
                         whitelistMode: defaults.whitelistMode || 'strict',
                         aiIdentity: defaults.aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.',
                         maxMemoryMessages: defaults.maxMemoryMessages || 100
@@ -901,7 +913,7 @@ class BotDashboard {
         // API: Update AI default settings
         this.app.put('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = req.body;
+                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, defaultEnabledTools } = req.body;
 
                 const settingsManager = require('./settingsManager');
 
@@ -924,6 +936,9 @@ class BotDashboard {
                     });
                 }
 
+                // Validate defaultEnabledTools if provided
+                const validatedEnabledTools = Array.isArray(defaultEnabledTools) ? defaultEnabledTools : undefined;
+
                 await settingsManager.updateSettings({
                     defaultModel,
                     defaultQuota,
@@ -931,7 +946,8 @@ class BotDashboard {
                     defaultVisionModel,
                     whitelistMode,
                     aiIdentity,
-                    maxMemoryMessages
+                    maxMemoryMessages,
+                    defaultEnabledTools: validatedEnabledTools
                 });
 
                 // Get model name for logging (dynamic)
@@ -947,6 +963,9 @@ class BotDashboard {
                 }
                 if (aiIdentity) {
                     logMessage += `, identity updated`;
+                }
+                if (validatedEnabledTools !== undefined) {
+                    logMessage += `, tools: ${validatedEnabledTools.length || 'none'}`;
                 }
                 if (maxMemoryMessages) {
                     logMessage += `, max memory: ${maxMemoryMessages}`;
@@ -1069,6 +1088,7 @@ class BotDashboard {
                 const settingsManager = require('./settingsManager');
                 const apiEndpoint = await settingsManager.getApiEndpoint();
                 const apiKey = await settingsManager.getApiKey();
+                const apiTimeout = await settingsManager.getApiTimeout();
                 const settings = await settingsManager.getAll();
 
                 res.json({
@@ -1076,6 +1096,7 @@ class BotDashboard {
                     config: {
                         apiEndpoint: apiEndpoint,
                         apiKey: apiKey,
+                        apiTimeout: apiTimeout,
                         storedEndpoint: settings.apiEndpoint, // Raw stored value (null if using env)
                         storedKey: settings.apiKey,           // Raw stored value (null if using env)
                         isOverridden: !!(settings.apiEndpoint || settings.apiKey)
@@ -1090,16 +1111,26 @@ class BotDashboard {
         // API: Update API configuration
         this.app.put('/api/ai-settings/api-config', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { apiEndpoint, apiKey } = req.body;
+                const { apiEndpoint, apiKey, apiTimeout } = req.body;
+
+                // Validate apiTimeout if provided
+                if (apiTimeout !== undefined && (typeof apiTimeout !== 'number' || apiTimeout < 10000 || apiTimeout > 600000)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'API timeout must be between 10000 and 600000 milliseconds (10-600 seconds)'
+                    });
+                }
 
                 const settingsManager = require('./settingsManager');
                 await settingsManager.updateSettings({
                     apiEndpoint: apiEndpoint || null,
-                    apiKey: apiKey || null
+                    apiKey: apiKey || null,
+                    apiTimeout: apiTimeout || undefined
                 });
 
-                if (apiEndpoint || apiKey) {
-                    this.addLog('success', `Updated API config: endpoint=${apiEndpoint || 'env'}, key=${apiKey ? 'set' : 'env'}`);
+                const timeoutLog = apiTimeout ? `, timeout=${apiTimeout / 1000}s` : '';
+                if (apiEndpoint || apiKey || apiTimeout) {
+                    this.addLog('success', `Updated API config: endpoint=${apiEndpoint || 'env'}, key=${apiKey ? 'set' : 'env'}${timeoutLog}`);
                 } else {
                     this.addLog('success', 'Reverted API config to .env values');
                 }

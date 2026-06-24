@@ -59,7 +59,8 @@ class WhitelistManager {
                             quota: u.quota || 100,
                             usageCount: u.usageCount || 0,
                             resetPeriod: u.resetPeriod || 'perDay',
-                            lastReset: u.lastReset || Date.now()
+                            lastReset: u.lastReset || Date.now(),
+                            enabledTools: u.enabledTools || [] // Empty = all tools enabled
                         }
                     ]));
                 } else if (data.numbers && Array.isArray(data.numbers)) {
@@ -73,7 +74,8 @@ class WhitelistManager {
                             quota: 100,
                             usageCount: 0,
                             resetPeriod: 'perDay',
-                            lastReset: Date.now()
+                            lastReset: Date.now(),
+                            enabledTools: [] // Empty = all tools enabled
                         }
                     ]));
                 }
@@ -102,7 +104,8 @@ class WhitelistManager {
                     quota: info.quota || 100,
                     usageCount: info.usageCount || 0,
                     resetPeriod: info.resetPeriod || 'perDay',
-                    lastReset: info.lastReset || Date.now()
+                    lastReset: info.lastReset || Date.now(),
+                    enabledTools: info.enabledTools || [] // Empty = all tools enabled
                 })),
                 lastUpdated: new Date().toISOString()
             };
@@ -143,7 +146,8 @@ class WhitelistManager {
                         quota: u.quota || 100,
                         usageCount: u.usageCount || 0,
                         resetPeriod: u.resetPeriod || 'perDay',
-                        lastReset: u.lastReset || Date.now()
+                        lastReset: u.lastReset || Date.now(),
+                        enabledTools: u.enabledTools || [] // Empty = all tools enabled
                     }
                 ]));
                 await this.saveToCache();
@@ -176,7 +180,8 @@ class WhitelistManager {
                 quota: info.quota || 100,
                 usageCount: info.usageCount || 0,
                 resetPeriod: info.resetPeriod || 'perDay',
-                lastReset: info.lastReset || Date.now()
+                lastReset: info.lastReset || Date.now(),
+                enabledTools: info.enabledTools || [] // Empty = all tools enabled
             }));
 
             await collection.updateOne(
@@ -211,6 +216,9 @@ class WhitelistManager {
             resetPeriod = await settingsManager.getDefaultResetPeriod();
         }
 
+        // Get default enabled tools
+        const enabledTools = await settingsManager.getDefaultEnabledTools();
+
         // Normalize format: ensure @s.whatsapp.net suffix
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
 
@@ -221,7 +229,8 @@ class WhitelistManager {
             quota,
             usageCount: 0,
             resetPeriod,
-            lastReset: Date.now()
+            lastReset: Date.now(),
+            enabledTools: enabledTools || [] // Empty = all tools enabled
         });
         await this.syncToMongoDB();
 
@@ -275,6 +284,25 @@ class WhitelistManager {
         return await settingsManager.getDefaultModel();
     }
 
+    async getEnabledTools(number) {
+        await this.initialize();
+
+        const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const info = this.whitelist.get(normalized);
+
+        if (!info) {
+            return []; // Not whitelisted, return empty (all tools disabled)
+        }
+
+        // Support both old string format and new object format
+        if (typeof info === 'string') {
+            return []; // Legacy format, return empty (all tools enabled by default)
+        }
+
+        // Return user's enabled tools (empty array = all tools enabled)
+        return info.enabledTools || [];
+    }
+
     async getAll() {
         await this.initialize();
         return Array.from(this.whitelist.entries()).map(([number, info]) => {
@@ -288,7 +316,8 @@ class WhitelistManager {
                     quota: 100,
                     usageCount: 0,
                     resetPeriod: 'perDay',
-                    lastReset: Date.now()
+                    lastReset: Date.now(),
+                    enabledTools: [] // Empty = all tools enabled
                 };
             }
             return {
@@ -299,7 +328,8 @@ class WhitelistManager {
                 quota: info.quota || 100,
                 usageCount: info.usageCount || 0,
                 resetPeriod: info.resetPeriod || 'perDay',
-                lastReset: info.lastReset || Date.now()
+                lastReset: info.lastReset || Date.now(),
+                enabledTools: info.enabledTools || [] // Empty = all tools enabled
             };
         });
     }
@@ -455,6 +485,41 @@ class WhitelistManager {
             // Reset usage when quota settings change
             info.usageCount = 0;
             info.lastReset = Date.now();
+        }
+
+        await this.syncToMongoDB();
+        return true;
+    }
+
+    async updateEnabledTools(number, enabledTools) {
+        await this.initialize();
+
+        const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const info = this.whitelist.get(normalized);
+
+        if (!info) {
+            return false;
+        }
+
+        // Convert legacy string format to object
+        if (typeof info === 'string') {
+            const settingsManager = require('./settingsManager');
+            const defaultModel = await settingsManager.getDefaultModel();
+            const defaultQuota = await settingsManager.getDefaultQuota();
+            const defaultResetPeriod = await settingsManager.getDefaultResetPeriod();
+
+            this.whitelist.set(normalized, {
+                model: info,
+                pushName: null,
+                jid: normalized,
+                quota: defaultQuota,
+                usageCount: 0,
+                resetPeriod: defaultResetPeriod,
+                lastReset: Date.now(),
+                enabledTools: enabledTools || []
+            });
+        } else {
+            info.enabledTools = enabledTools || [];
         }
 
         await this.syncToMongoDB();

@@ -19,9 +19,11 @@ class SettingsManager {
             defaultQuota: 30,
             defaultResetPeriod: 'perDay',
             defaultVisionModel: null, // Must be set by user
+            defaultEnabledTools: ['web_search', 'fetch_url', 'get_time', 'image_search'], // Default tools enabled for new users
             whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
             aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality
             maxMemoryMessages: 100, // Max messages stored per chat for AI context
+            apiTimeout: 120000, // API request timeout in milliseconds (120s default)
             supportedModels: [], // User must add models via UI
             // Provider configurations (API paths, versions, etc.)
             providerConfigs: {
@@ -101,13 +103,22 @@ class SettingsManager {
             const doc = await collection.findOne({ _id: 'defaults' });
 
             if (doc && doc.settings) {
-                this.settings = { ...this.defaultSettings, ...doc.settings };
+                // TEMPORARY FIX: Check if defaultEnabledTools is missing or empty in stored settings
+                // Force use hardcoded default if stored value is empty array
+                const storedSettings = doc.settings;
+                if (!storedSettings.defaultEnabledTools || storedSettings.defaultEnabledTools.length === 0) {
+                    console.log('[AI Settings] Detected empty defaultEnabledTools, using hardcoded default');
+                    storedSettings.defaultEnabledTools = this.defaultSettings.defaultEnabledTools;
+                }
+                this.settings = { ...this.defaultSettings, ...storedSettings };
+                // Save back to MongoDB to persist the fix
+                await this.saveToMongoDB();
             } else {
                 this.settings = { ...this.defaultSettings };
                 await this.saveToMongoDB();
             }
 
-            console.log(`[AI Settings] Loaded from MongoDB: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}`);
+            console.log(`[AI Settings] Loaded from MongoDB: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, tools=${this.settings.defaultEnabledTools.length}`);
         } catch (error) {
             console.error('[AI Settings] Failed to load from MongoDB:', error.message);
             this.settings = { ...this.defaultSettings };
@@ -187,6 +198,12 @@ class SettingsManager {
         return null;
     }
 
+    async getDefaultEnabledTools() {
+        await this.initialize();
+        // Empty array means all tools enabled
+        return this.settings.defaultEnabledTools || [];
+    }
+
     async getWhitelistMode() {
         await this.initialize();
         return this.settings.whitelistMode || 'strict';
@@ -226,6 +243,12 @@ class SettingsManager {
         await this.initialize();
         // Priority: settings → env var
         return this.settings.apiKey || process.env.AI_API_KEY || null;
+    }
+
+    async getApiTimeout() {
+        await this.initialize();
+        // Return configured timeout or default to 120s
+        return this.settings.apiTimeout || this.defaultSettings.apiTimeout;
     }
 
     async getProviderConfigs() {
