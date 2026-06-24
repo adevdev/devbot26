@@ -1113,6 +1113,130 @@ class BotDashboard {
                 res.status(400).json({ success: false, error: error.message });
             }
         });
+
+        // API: Get all tools
+        this.app.get('/api/tools', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const fs = require('fs').promises;
+                const path = require('path');
+                const toolsPath = path.join(__dirname, 'tools', 'definitions.js');
+
+                // Read static tools file
+                const content = await fs.readFile(toolsPath, 'utf-8');
+
+                // Extract toolDefinitions array using regex
+                const match = content.match(/const toolDefinitions = (\[[\s\S]*?\]);/);
+                if (!match) {
+                    return res.status(500).json({ success: false, error: 'Could not parse tools file' });
+                }
+
+                const staticTools = eval(match[1]);
+
+                // Add metadata to static tools
+                const staticWithMeta = staticTools.map(tool => ({
+                    ...tool,
+                    temporary: false,
+                    source: 'tools/definitions.js'
+                }));
+
+                // Get temporary tools
+                const temporaryToolsManager = require('./temporaryToolsManager');
+                const tempTools = temporaryToolsManager.getAll();
+
+                // Add only definition fields for temporary tools (for consistency with static)
+                const tempWithMeta = tempTools.map(tool => ({
+                    name: tool.name,
+                    description: tool.description,
+                    input_schema: tool.input_schema,
+                    temporary: true,
+                    source: tool.source,
+                    addedAt: tool.addedAt
+                }));
+
+                // Merge: static first, then temporary
+                const allTools = [...staticWithMeta, ...tempWithMeta];
+
+                res.json({ success: true, tools: allTools });
+            } catch (error) {
+                this.addLog('error', `Failed to get tools: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Delete temporary tool
+        this.app.delete('/api/tools/:name', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { name } = req.params;
+                const temporaryToolsManager = require('./temporaryToolsManager');
+
+                // Only allow deleting temporary tools
+                if (!temporaryToolsManager.has(name)) {
+                    return res.status(404).json({ success: false, error: 'Tool not found or is not temporary' });
+                }
+
+                const removed = temporaryToolsManager.remove(name);
+
+                if (removed) {
+                    this.addLog('success', `Deleted temporary tool: ${name}`);
+                    res.json({ success: true, message: 'Temporary tool deleted successfully' });
+                } else {
+                    res.status(404).json({ success: false, error: 'Tool not found' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to delete tool: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add temporary tool
+        this.app.post('/api/tools/temporary', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { name, description, input_schema, implementation } = req.body;
+
+                if (!name || !description || !input_schema || !implementation) {
+                    return res.status(400).json({ success: false, error: 'Missing required fields: name, description, input_schema, implementation' });
+                }
+
+                // Validate name format (snake_case)
+                if (!/^[a-z][a-z0-9_]*$/.test(name)) {
+                    return res.status(400).json({ success: false, error: 'Tool name must be snake_case (lowercase letters, numbers, underscores)' });
+                }
+
+                // Validate input_schema
+                if (typeof input_schema !== 'object' || !input_schema.type) {
+                    return res.status(400).json({ success: false, error: 'Invalid input_schema: must be an object with a type field' });
+                }
+
+                // Evaluate implementation code to create function
+                let implementationFn;
+                try {
+                    // Wrap in function to eval
+                    implementationFn = eval(`(${implementation})`);
+
+                    if (typeof implementationFn !== 'function') {
+                        return res.status(400).json({ success: false, error: 'Implementation must be a function' });
+                    }
+                } catch (error) {
+                    return res.status(400).json({ success: false, error: `Invalid implementation code: ${error.message}` });
+                }
+
+                const temporaryToolsManager = require('./temporaryToolsManager');
+
+                // Check if tool already exists
+                if (temporaryToolsManager.has(name)) {
+                    return res.status(400).json({ success: false, error: 'Tool with this name already exists' });
+                }
+
+                // Add tool
+                temporaryToolsManager.add(name, description, input_schema, implementationFn, 'Dashboard');
+
+                this.addLog('success', `Added temporary tool: ${name}`);
+                res.json({ success: true, message: 'Temporary tool added successfully' });
+            } catch (error) {
+                this.addLog('error', `Failed to add temporary tool: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
     }
     
     setupSocketIO() {

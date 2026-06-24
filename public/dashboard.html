@@ -554,6 +554,7 @@
                 <button class="tab-btn" onclick="switchAiSubTab('models', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Models</button>
                 <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Memory</button>
                 <button class="tab-btn" onclick="switchAiSubTab('whitelist', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Whitelist</button>
+                <button class="tab-btn" onclick="switchAiSubTab('tools', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Tools</button>
             </div>
 
             <!-- Defaults Sub-tab -->
@@ -728,6 +729,34 @@
                     <tbody id="whitelistTableBody">
                         <tr>
                             <td colspan="6" style="text-align: center; opacity: 0.6;">Loading AI settings...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Tools Sub-tab -->
+            <div id="ai-subtab-tools" class="ai-subtab-content" style="display: none;">
+                <div style="margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;">
+                    <div>
+                        <h3 style="color: #0f0; margin: 0;">AI Tools</h3>
+                        <p style="opacity: 0.7; font-size: 0.9rem; margin-top: 0.5rem; margin-bottom: 0;">
+                            Tools available for AI to use during conversations. Edit tools/definitions.js to modify static tools, or add temporary tools below.
+                        </p>
+                    </div>
+                    <button class="btn" onclick="showAddToolModal()">+ Add Tool</button>
+                </div>
+                <table class="commands-table">
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>Parameters</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="toolsTableBody">
+                        <tr>
+                            <td colspan="4" style="text-align: center; opacity: 0.6;">Loading tools...</td>
                         </tr>
                     </tbody>
                 </table>
@@ -1169,6 +1198,48 @@
             <div class="modal-buttons">
                 <button class="btn" id="editApiConfigCancel">Cancel</button>
                 <button class="btn" id="editApiConfigSubmit">Save API Config</button>
+            </div>
+        </div>
+    </dialog>
+
+    <!-- Add Tool Modal -->
+    <dialog id="addToolModal">
+        <div class="modal-content">
+            <h3 class="modal-title">Add Temporary Tool</h3>
+            <div style="margin-bottom: 1rem; opacity: 0.8; font-size: 0.9rem;">
+                Add a temporary AI tool (stored in memory, cleared on restart).
+            </div>
+            <div class="input-group">
+                <label>Tool Name:</label>
+                <input type="text" id="addToolName" placeholder="my_custom_tool" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Use snake_case (e.g., fetch_url, calculate_sum)
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Description:</label>
+                <textarea id="addToolDescription" placeholder="What this tool does and when AI should use it" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem; height: 80px;"></textarea>
+            </div>
+            <div class="input-group">
+                <label>Input Schema (JSON):</label>
+                <textarea id="addToolSchema" placeholder='{"type":"object","properties":{"param":{"type":"string","description":"Param desc"}},"required":["param"]}' style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.85rem; height: 120px;"></textarea>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    JSON Schema defining tool parameters
+                </small>
+            </div>
+            <div class="input-group">
+                <label>Implementation Code (JavaScript):</label>
+                <textarea id="addToolImplementation" placeholder='async (input) => {
+  // Your tool logic here
+  return "result";
+}' style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.85rem; height: 150px;"></textarea>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Function that executes the tool. Must return a string or be async.
+                </small>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="addToolCancel">Cancel</button>
+                <button class="btn" id="addToolSubmit">Add Tool</button>
             </div>
         </div>
     </dialog>

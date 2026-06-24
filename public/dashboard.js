@@ -474,6 +474,7 @@ function switchTab(tabName, buttonElement) {
         loadModels();
         loadMemory();
         loadWhitelist();
+        loadTools();
     }
 }
 
@@ -491,6 +492,11 @@ function switchAiSubTab(subTabName, buttonElement) {
         content.style.display = 'none';
     });
     document.getElementById(`ai-subtab-${subTabName}`).style.display = 'block';
+
+    // Load data for specific subtabs
+    if (subTabName === 'tools') {
+        loadTools();
+    }
 }
 
 // Load commands list
@@ -1991,3 +1997,153 @@ async function removeWhitelistNumber(encodedNumber) {
         }
     }
 }
+
+// ============================================
+// Tools Management
+// ============================================
+
+// Load tools
+async function loadTools() {
+    try {
+        const response = await fetch('/api/tools', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            renderTools(data.tools);
+        } else {
+            renderToolsError('Failed to load tools');
+        }
+    } catch (error) {
+        renderToolsError('Error loading tools: ' + error.message);
+    }
+}
+
+// Render tools table
+function renderTools(tools) {
+    const tbody = document.getElementById('toolsTableBody');
+
+    if (tools.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No tools defined</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = tools.map(tool => {
+        // Extract parameter names from schema
+        let params = '-';
+        if (tool.input_schema && tool.input_schema.properties) {
+            const props = Object.keys(tool.input_schema.properties);
+            const required = tool.input_schema.required || [];
+            params = props.map(p => required.includes(p) ? `<strong>${p}</strong>` : p).join(', ');
+        }
+
+        // Badge and actions for temporary tools
+        const badge = tool.temporary ? '<span class="badge temp">TEMP</span>' : '';
+        const source = tool.temporary ? `<small style="opacity: 0.6;">${tool.source}</small>` : '';
+        const actions = tool.temporary
+            ? `<button class="btn btn-small danger" onclick="removeTemporaryTool('${tool.name}')">Delete</button>`
+            : '<span style="opacity: 0.5;">Static</span>';
+
+        return `
+            <tr>
+                <td><strong>${tool.name}</strong>${badge ? '<br>' + badge : ''}</td>
+                <td>${tool.description}${source ? '<br>' + source : ''}</td>
+                <td style="font-size: 0.85rem;">${params}</td>
+                <td>${actions}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Render tools error
+function renderToolsError(message) {
+    const tbody = document.getElementById('toolsTableBody');
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #f00;">${message}</td></tr>`;
+}
+
+// Remove temporary tool
+async function removeTemporaryTool(name) {
+    const confirmed = await showConfirm('Delete Temporary Tool', `Delete temporary tool "${name}"?`);
+    if (confirmed) {
+        try {
+            const response = await fetch(`/api/tools/${encodeURIComponent(name)}`, {
+                method: 'DELETE',
+                credentials: 'same-origin'
+            });
+            const data = await response.json();
+
+            if (data.success) {
+                loadTools();
+                await showAlert('Success', 'Temporary tool deleted successfully!');
+            } else {
+                await showAlert('Error', 'Failed to delete tool: ' + data.error);
+            }
+        } catch (error) {
+            await showAlert('Error', 'Error deleting tool: ' + error.message);
+        }
+    }
+}
+
+// Show add tool modal
+function showAddToolModal() {
+    const modal = document.getElementById('addToolModal');
+    document.getElementById('addToolName').value = '';
+    document.getElementById('addToolDescription').value = '';
+    document.getElementById('addToolSchema').value = '';
+    document.getElementById('addToolImplementation').value = '';
+    modal.showModal();
+}
+
+// Add tool modal handlers
+document.getElementById('addToolCancel').addEventListener('click', () => {
+    document.getElementById('addToolModal').close();
+});
+
+document.getElementById('addToolSubmit').addEventListener('click', async () => {
+    const name = document.getElementById('addToolName').value.trim();
+    const description = document.getElementById('addToolDescription').value.trim();
+    const schemaText = document.getElementById('addToolSchema').value.trim();
+    const implementationCode = document.getElementById('addToolImplementation').value.trim();
+
+    if (!name || !description || !schemaText || !implementationCode) {
+        await showAlert('Error', 'All fields are required');
+        return;
+    }
+
+    // Validate JSON schema
+    let schema;
+    try {
+        schema = JSON.parse(schemaText);
+    } catch (e) {
+        await showAlert('Error', 'Invalid JSON schema: ' + e.message);
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/tools/temporary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({
+                name,
+                description,
+                input_schema: schema,
+                implementation: implementationCode
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('addToolModal').close();
+            loadTools();
+            await showAlert('Success', 'Temporary tool added successfully!');
+        } else {
+            await showAlert('Error', 'Failed to add tool: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error adding tool: ' + error.message);
+    }
+});
+

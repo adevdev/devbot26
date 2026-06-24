@@ -511,8 +511,8 @@ Instead write conversationally for mobile.`;
         }
     ];
 
-    // Define tools
-    const toolDefinitions = tools.toolDefinitions;
+    // Define tools (static + temporary merged)
+    const toolDefinitions = tools.getAllDefinitions();
 
     // Tool calling loop (max iterations to prevent infinite loops)
     let response;
@@ -573,22 +573,13 @@ Instead write conversationally for mobile.`;
         for (const toolUse of toolUses) {
             let toolResult;
 
-            // Execute the appropriate tool
-            if (toolUse.name === 'web_search') {
-                console.log('[AI] Using web search:', toolUse.input.query);
-                toolResult = await tools.webSearch(toolUse.input.query);
-            } else if (toolUse.name === 'fetch_url') {
-                console.log('[AI] Fetching URL:', toolUse.input.url);
-                toolResult = await tools.fetchUrl(toolUse.input.url);
-            } else if (toolUse.name === 'get_time') {
-                console.log('[AI] Getting current time');
-                toolResult = tools.getCurrentTime();
-            } else if (toolUse.name === 'image_search') {
+            // Show progress for known tools
+            if (toolUse.name === 'image_search') {
                 console.log('[AI] Searching images:', toolUse.input.query);
                 try {
                     // Call image search tool
-                    const searchResult = await tools.imageSearch(toolUse.input.query);
-                    const apiData = JSON.parse(searchResult);
+                    toolResult = await tools.executeTool(toolUse.name, toolUse.input);
+                    const apiData = JSON.parse(toolResult);
 
                     if (apiData.success && apiData.images && apiData.images.length > 0) {
                         // Download first image
@@ -631,6 +622,18 @@ Instead write conversationally for mobile.`;
                     toolResult = JSON.stringify({
                         error: error.message,
                         query: toolUse.input.query
+                    });
+                }
+            } else {
+                // Execute tool using centralized function
+                try {
+                    console.log(`[AI] Executing tool: ${toolUse.name}`);
+                    toolResult = await tools.executeTool(toolUse.name, toolUse.input);
+                } catch (error) {
+                    console.error(`[AI] Tool execution failed (${toolUse.name}):`, error.message);
+                    toolResult = JSON.stringify({
+                        error: error.message,
+                        tool: toolUse.name
                     });
                 }
             }
