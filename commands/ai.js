@@ -337,11 +337,31 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         timeZoneName: 'short'
     });
 
+    // Get user pushname for context
+    let userName = 'User';
+    if (userMessage && userMessage.sender) {
+        try {
+            const wachan = require('wachan');
+            const userData = await wachan.getUserData(userMessage.sender.id);
+            if (userData && userData.pushName) {
+                userName = userData.pushName;
+            } else if (userMessage.sender.name) {
+                userName = userMessage.sender.name;
+            }
+        } catch (e) {
+            // Fallback to sender name
+            if (userMessage.sender.name) {
+                userName = userMessage.sender.name;
+            }
+        }
+    }
+
     // System prompt for WhatsApp formatting
     const aiIdentity = await settingsManager.getAiIdentity();
     let systemPrompt = `${aiIdentity}
 
 IMPORTANT CONTEXT:
+Current user: ${userName}
 Current date: ${currentDate}
 Current time: ${currentTime}`;
 
