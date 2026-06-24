@@ -43,12 +43,17 @@ class WhitelistManager {
         try {
             if (fs.existsSync(this.cacheFile)) {
                 const data = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
+
+                // Get default model from settings
+                const settingsManager = require('./settingsManager');
+                const defaultModel = await settingsManager.getDefaultModel();
+
                 // Convert array format to Map
                 if (data.users && Array.isArray(data.users)) {
                     this.whitelist = new Map(data.users.map(u => [
                         u.number,
                         {
-                            model: u.model || 'qwen3-coder-next',
+                            model: u.model || defaultModel,
                             pushName: u.pushName || null,
                             jid: u.jid || u.number,
                             quota: u.quota || 100,
@@ -62,7 +67,7 @@ class WhitelistManager {
                     this.whitelist = new Map(data.numbers.map(n => [
                         n,
                         {
-                            model: 'qwen3-coder-next',
+                            model: defaultModel,
                             pushName: null,
                             jid: n,
                             quota: 100,
@@ -124,11 +129,15 @@ class WhitelistManager {
 
             const doc = await collection.findOne({ _id: 'users' });
 
+            // Get default model from settings
+            const settingsManager = require('./settingsManager');
+            const defaultModel = await settingsManager.getDefaultModel();
+
             if (doc && doc.users) {
                 this.whitelist = new Map(doc.users.map(u => [
                     u.number,
                     {
-                        model: u.model || 'qwen3-coder-next',
+                        model: u.model || defaultModel,
                         pushName: u.pushName || null,
                         jid: u.jid || u.number,
                         quota: u.quota || 100,
@@ -256,7 +265,14 @@ class WhitelistManager {
         if (typeof info === 'string') {
             return info;
         }
-        return info?.model || 'qwen3-coder-next';
+
+        // Return user's model or fallback to system default
+        if (info?.model) {
+            return info.model;
+        }
+
+        const settingsManager = require('./settingsManager');
+        return await settingsManager.getDefaultModel();
     }
 
     async getAll() {

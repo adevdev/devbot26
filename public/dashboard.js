@@ -619,6 +619,17 @@ async function removeCommand(name) {
 // Load AI default settings
 async function loadAIDefaults() {
     try {
+        // Load models first to ensure cache is populated
+        if (!window.cachedModels) {
+            const modelsResponse = await fetch('/api/ai-settings/models', {
+                credentials: 'same-origin'
+            });
+            const modelsData = await modelsResponse.json();
+            if (modelsData.success) {
+                window.cachedModels = modelsData.models;
+            }
+        }
+
         const response = await fetch('/api/ai-settings/defaults', {
             credentials: 'same-origin'
         });
@@ -627,11 +638,27 @@ async function loadAIDefaults() {
         if (data.success) {
             const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = data.defaults;
 
-            // Format display
-            const modelDisplay = defaultModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
+            // Store default model ID globally for use in other functions
+            window.defaultModelId = defaultModel;
+
+            // Format display - dynamic model lookup
+            let modelDisplay = defaultModel;
+            let visionDisplay = defaultVisionModel;
+
+            if (window.cachedModels) {
+                const modelInfo = window.cachedModels.find(m => m.id === defaultModel);
+                if (modelInfo) {
+                    modelDisplay = modelInfo.displayName || modelInfo.name;
+                }
+
+                const visionInfo = window.cachedModels.find(m => m.id === defaultVisionModel);
+                if (visionInfo) {
+                    visionDisplay = visionInfo.displayName || visionInfo.name;
+                }
+            }
+
             const resetDisplay = defaultResetPeriod === 'per5Hours' ? 'Every 5 Hours' :
                                 defaultResetPeriod === 'perDay' ? 'Every Day' : 'Every Month';
-            const visionDisplay = defaultVisionModel === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Claude Sonnet 4.5';
 
             // Update UI
             document.getElementById('defaultModel').textContent = modelDisplay;
@@ -981,6 +1008,18 @@ async function removeModel(modelId) {
 
 async function loadWhitelist() {
     try {
+        // Load models first to cache them
+        if (!window.cachedModels) {
+            const modelsResponse = await fetch('/api/ai-settings/models', {
+                credentials: 'same-origin'
+            });
+            const modelsData = await modelsResponse.json();
+            if (modelsData.success) {
+                window.cachedModels = modelsData.models;
+            }
+        }
+
+        // Then load whitelist
         const response = await fetch('/api/whitelist', {
             credentials: 'same-origin'
         });
@@ -1301,7 +1340,7 @@ function renderWhitelist(users) {
     tbody.innerHTML = users.map(user => {
         // Handle both old format (string) and new format (object)
         const number = typeof user === 'string' ? user : user.number;
-        const model = typeof user === 'string' ? 'qwen3-coder-next' : user.model;
+        const model = typeof user === 'string' ? (window.defaultModelId || 'unknown') : user.model;
         const pushName = typeof user === 'object' && user.pushName ? user.pushName : 'Unknown';
         const jid = typeof user === 'object' && user.jid ? user.jid : number;
         const quota = typeof user === 'object' && user.quota ? user.quota : 100;
@@ -1316,8 +1355,14 @@ function renderWhitelist(users) {
         const encodedQuota = quota;
         const encodedResetPeriod = resetPeriod;
 
-        // Format model name for display
-        const modelDisplay = model === 'claude-sonnet-4.5' ? 'Claude Sonnet 4.5' : 'Qwen3 Coder Next';
+        // Format model name for display - use cached models list
+        let modelDisplay = model; // Fallback to model ID if not found
+        if (window.cachedModels && window.cachedModels.length > 0) {
+            const modelInfo = window.cachedModels.find(m => m.id === model);
+            if (modelInfo) {
+                modelDisplay = modelInfo.displayName || modelInfo.name;
+            }
+        }
 
         // Format reset period
         const resetDisplay = resetPeriod === 'per5Hours' ? 'Every 5h' :
@@ -1329,9 +1374,9 @@ function renderWhitelist(users) {
 
         return `
             <tr>
-                <td><strong>${pushName}</strong><br><small style="opacity: 0.6;">${jidNumber}</small></td>
+                <td style="font-family: monospace; font-size: 0.85rem;">${jidNumber}</td>
+                <td><strong>${pushName}</strong></td>
                 <td><span class="badge">${modelDisplay}</span></td>
-                <td style="text-align: center;">${quota}</td>
                 <td style="text-align: center; color: ${usageColor};">${usageCount}/${quota}</td>
                 <td style="text-align: center;"><small>${resetDisplay}</small></td>
                 <td>
@@ -1646,11 +1691,6 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
 
         if (data.success) {
             document.getElementById('addWhitelistModal').close();
-            document.getElementById('whitelistNumber').value = '';
-            document.getElementById('whitelistPushName').value = '';
-            document.getElementById('whitelistModel').value = 'qwen3-coder-next';
-            document.getElementById('whitelistQuota').value = '100';
-            document.getElementById('whitelistResetPeriod').value = 'perDay';
             loadWhitelist();
             await showAlert('Success', 'User added to AI whitelist successfully!');
         } else {

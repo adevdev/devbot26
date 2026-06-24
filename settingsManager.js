@@ -13,31 +13,16 @@ class SettingsManager {
         this.settings = null;
         this.initialized = false;
 
-        // Default settings
+        // Default settings (minimal bootstrap - user must configure models via UI)
         this.defaultSettings = {
-            defaultModel: 'qwen3-coder-next',
-            defaultQuota: 100,
+            defaultModel: null, // Must be set by user
+            defaultQuota: 30,
             defaultResetPeriod: 'perDay',
-            defaultVisionModel: 'claude-sonnet-4.5', // Fallback model for vision requests
+            defaultVisionModel: null, // Must be set by user
             whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
             aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality
             maxMemoryMessages: 100, // Max messages stored per chat for AI context
-            supportedModels: [
-                {
-                    id: 'qwen3-coder-next',
-                    displayName: 'Qwen3 Coder Next',
-                    supportsVision: false,
-                    enabled: true,
-                    provider: 'anthropic' // API format to use
-                },
-                {
-                    id: 'claude-sonnet-4.5',
-                    displayName: 'Claude Sonnet 4.5',
-                    supportsVision: true,
-                    enabled: true,
-                    provider: 'anthropic' // API format to use
-                }
-            ],
+            supportedModels: [], // User must add models via UI
             // Provider configurations (API paths, versions, etc.)
             providerConfigs: {
                 openai: {
@@ -163,7 +148,15 @@ class SettingsManager {
 
     async getDefaultModel() {
         await this.initialize();
-        return this.settings.defaultModel;
+        const model = this.settings.defaultModel;
+
+        // If no default set, return first enabled model
+        if (!model) {
+            const enabledModels = this.settings.supportedModels.filter(m => m.enabled);
+            return enabledModels.length > 0 ? enabledModels[0].id : null;
+        }
+
+        return model;
     }
 
     async getDefaultQuota() {
@@ -178,7 +171,20 @@ class SettingsManager {
 
     async getDefaultVisionModel() {
         await this.initialize();
-        return this.settings.defaultVisionModel || 'claude-sonnet-4.5';
+
+        // If user has set a vision model, return it
+        if (this.settings.defaultVisionModel) {
+            return this.settings.defaultVisionModel;
+        }
+
+        // Otherwise, return first vision-capable model from supported models
+        const visionModels = this.settings.supportedModels.filter(m => m.supportsVision && m.enabled);
+        if (visionModels.length > 0) {
+            return visionModels[0].id;
+        }
+
+        // No vision models available
+        return null;
     }
 
     async getWhitelistMode() {
@@ -397,9 +403,12 @@ class SettingsManager {
         await this.initialize();
 
         if (updates.defaultModel !== undefined) {
-            const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
-            if (!validModels.includes(updates.defaultModel)) {
-                throw new Error('Invalid model');
+            // Validate against supported models list (dynamic)
+            const supportedModels = await this.getSupportedModels();
+            const validModelIds = supportedModels.map(m => m.id);
+
+            if (!validModelIds.includes(updates.defaultModel)) {
+                throw new Error(`Invalid model. Available: ${validModelIds.join(', ')}`);
             }
             this.settings.defaultModel = updates.defaultModel;
         }
@@ -421,9 +430,13 @@ class SettingsManager {
         }
 
         if (updates.defaultVisionModel !== undefined) {
-            const validVisionModels = ['claude-sonnet-4.5']; // Only vision-capable models
-            if (!validVisionModels.includes(updates.defaultVisionModel)) {
-                throw new Error('Invalid vision model');
+            // Validate against vision-capable models (dynamic)
+            const supportedModels = await this.getSupportedModels();
+            const visionModels = supportedModels.filter(m => m.supportsVision === true);
+            const validVisionModelIds = visionModels.map(m => m.id);
+
+            if (!validVisionModelIds.includes(updates.defaultVisionModel)) {
+                throw new Error(`Invalid vision model. Available: ${validVisionModelIds.join(', ')}`);
             }
             this.settings.defaultVisionModel = updates.defaultVisionModel;
         }

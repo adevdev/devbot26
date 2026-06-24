@@ -42,6 +42,19 @@ module.exports = {
         const { message, command } = context;
         const bot = require('wachan');
 
+        // Check if models are configured
+        const supportedModels = await settingsManager.getSupportedModels();
+        if (!supportedModels || supportedModels.length === 0) {
+            console.log('[AI] No models configured');
+            return '*Error:* No AI models configured. Please add models in dashboard: Settings → AI Settings → Models.';
+        }
+
+        const enabledModels = supportedModels.filter(m => m.enabled);
+        if (enabledModels.length === 0) {
+            console.log('[AI] No models enabled');
+            return '*Error:* No AI models enabled. Please enable at least one model in dashboard: Settings → AI Settings → Models.';
+        }
+
         // Log to console (auto-piped to dashboard)
         const userText = command.parameters.join(' ') || '(no text)';
         const hasImage = message.isMedia && message.type === 'image';
@@ -57,9 +70,9 @@ module.exports = {
             // Use fallback name
         }
 
-        // Log AI command to console (detailed) and dashboard (censored - wachan handles auth display)
+        // Log AI command to console (detailed) and dashboard (censored for non-auth users)
         console.log(`[AI] Command from ${message.sender.id}: ${hasImage ? '[IMAGE] ' : ''}${userText}`);
-        console.log(`[${pushName}] [AI]: [MESSAGE HIDDEN]`); // Dashboard shows censored, wachan handles auth
+        console.log(`[${pushName}] [AI]: ${userText.substring(0, 100)}${userText.length > 100 ? '...' : ''}`); // Dashboard will censor if not authenticated
 
         // Check whitelist (skip if already checked by fallback handler)
         // ponytail: check both id and lid since @mentions use lid
@@ -79,6 +92,12 @@ module.exports = {
                     // Auto mode: add user with defaults
                     console.log(`[AI] Auto-adding ${message.sender.id} to whitelist (auto mode)`);
                     const defaultModel = await settingsManager.getDefaultModel();
+
+                    if (!defaultModel) {
+                        console.log('[AI] Cannot auto-add: no default model set');
+                        return '*Error:* Auto-add failed. No default model configured. Please set default model in dashboard: Settings → AI Settings → Defaults.';
+                    }
+
                     const defaultQuota = await settingsManager.getDefaultQuota();
                     const defaultResetPeriod = await settingsManager.getDefaultResetPeriod();
 
@@ -166,9 +185,15 @@ module.exports = {
 
         // Get user's assigned model (try lid first since @mentions use lid, fallback to id)
         let userModel = message.sender.lid ? await whitelistManager.getModel(message.sender.lid) : null;
-        if (!userModel || userModel === 'qwen3-coder-next') {
+        if (!userModel) {
             userModel = await whitelistManager.getModel(message.sender.id);
         }
+
+        // Ensure user has a valid model assigned
+        if (!userModel) {
+            return '*Error:* No AI model assigned. Please configure your model in dashboard or contact admin.';
+        }
+
         console.log(`[AI] User model: ${userModel}`);
 
         // Build prompt from quoted message + user's message
@@ -189,11 +214,21 @@ module.exports = {
         }
 
         // Auto-switch to vision-capable model if user's model doesn't support it
-        const VISION_CAPABLE_MODELS = ['claude-sonnet-4.5']; // Add more models here as you test them
-        if (imageBuffer && !VISION_CAPABLE_MODELS.includes(userModel)) {
-            const visionModel = await settingsManager.getDefaultVisionModel();
-            console.log(`[AI] Image detected, auto-switching from ${userModel} to ${visionModel} for vision`);
-            userModel = visionModel;
+        if (imageBuffer) {
+            // Check if user's model supports vision dynamically
+            const supportedModels = await settingsManager.getSupportedModels();
+            const userModelInfo = supportedModels.find(m => m.id === userModel);
+
+            if (!userModelInfo || !userModelInfo.supportsVision) {
+                const visionModel = await settingsManager.getDefaultVisionModel();
+
+                if (!visionModel) {
+                    return '*Error:* Image detected but no vision-capable models are configured. Please add a vision-capable model in dashboard Settings → AI Settings → Models.';
+                }
+
+                console.log(`[AI] Image detected, auto-switching from ${userModel} to ${visionModel} for vision`);
+                userModel = visionModel;
+            }
         }
 
         if (quotedMsg && quotedMsg.text) {

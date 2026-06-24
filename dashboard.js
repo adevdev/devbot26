@@ -708,9 +708,19 @@ class BotDashboard {
                     return res.status(400).json({ success: false, error: 'Invalid phone number format' });
                 }
 
-                // Validate model if provided
-                const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
-                const selectedModel = model && validModels.includes(model) ? model : 'qwen3-coder-next';
+                // Validate model dynamically from settings
+                const settingsManager = require('./settingsManager');
+                await settingsManager.initialize(); // Force reload to get latest models
+                const supportedModels = await settingsManager.getSupportedModels();
+                const validModelIds = supportedModels.map(m => m.id);
+
+                // Use provided model if valid, otherwise use default from settings
+                let selectedModel;
+                if (model && validModelIds.includes(model)) {
+                    selectedModel = model;
+                } else {
+                    selectedModel = await settingsManager.getDefaultModel();
+                }
 
                 // Validate pushName if provided
                 const sanitizedPushName = pushName && typeof pushName === 'string' ? pushName.trim() : null;
@@ -749,10 +759,17 @@ class BotDashboard {
                 const { number } = req.params;
                 const { model, newNumber, pushName, quota, usageCount, resetPeriod } = req.body;
 
-                // Validate model
-                const validModels = ['claude-sonnet-4.5', 'qwen3-coder-next'];
-                if (!model || !validModels.includes(model)) {
-                    return res.status(400).json({ success: false, error: 'Valid model is required' });
+                // Validate model dynamically from settings
+                const settingsManager = require('./settingsManager');
+                await settingsManager.initialize(); // Force reload to get latest models
+                const supportedModels = await settingsManager.getSupportedModels();
+                const validModelIds = supportedModels.map(m => m.id);
+
+                if (!model || !validModelIds.includes(model)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Valid model is required. Available: ${validModelIds.join(', ')}`
+                    });
                 }
 
                 const whitelistManager = require('./whitelistManager');
@@ -869,7 +886,7 @@ class BotDashboard {
                         defaultModel: defaults.defaultModel,
                         defaultQuota: defaults.defaultQuota,
                         defaultResetPeriod: defaults.defaultResetPeriod,
-                        defaultVisionModel: defaults.defaultVisionModel || 'claude-sonnet-4.5',
+                        defaultVisionModel: defaults.defaultVisionModel,
                         whitelistMode: defaults.whitelistMode || 'strict',
                         aiIdentity: defaults.aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.',
                         maxMemoryMessages: defaults.maxMemoryMessages || 100
@@ -887,6 +904,26 @@ class BotDashboard {
                 const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages } = req.body;
 
                 const settingsManager = require('./settingsManager');
+
+                // Validate models dynamically
+                await settingsManager.initialize();
+                const supportedModels = await settingsManager.getSupportedModels();
+                const validModelIds = supportedModels.map(m => m.id);
+
+                if (defaultModel && !validModelIds.includes(defaultModel)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Invalid default model. Available: ${validModelIds.join(', ')}`
+                    });
+                }
+
+                if (defaultVisionModel && !validModelIds.includes(defaultVisionModel)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Invalid vision model. Available: ${validModelIds.join(', ')}`
+                    });
+                }
+
                 await settingsManager.updateSettings({
                     defaultModel,
                     defaultQuota,
@@ -897,7 +934,10 @@ class BotDashboard {
                     maxMemoryMessages
                 });
 
-                const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
+                // Get model name for logging (dynamic)
+                const modelInfo = supportedModels.find(m => m.id === defaultModel);
+                const modelName = modelInfo ? modelInfo.name : defaultModel;
+
                 const resetLabel = defaultResetPeriod === 'per5Hours' ? '5h' :
                                   defaultResetPeriod === 'perDay' ? 'day' : 'month';
 

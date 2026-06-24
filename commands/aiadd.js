@@ -23,6 +23,17 @@ module.exports = {
             return;
         }
 
+        // Check if models are configured
+        const supportedModels = await settingsManager.getSupportedModels();
+        if (!supportedModels || supportedModels.length === 0) {
+            return '*Error:* No AI models configured. Please add models first in dashboard: Settings → AI Settings → Models.';
+        }
+
+        const defaultModel = await settingsManager.getDefaultModel();
+        if (!defaultModel) {
+            return '*Error:* No default AI model set. Please set default model in dashboard: Settings → AI Settings → Defaults.';
+        }
+
         // Extract mentions from baileys message
         const mentions = getMentions(message);
 
@@ -32,14 +43,23 @@ module.exports = {
             const defaultQuota = await settingsManager.getDefaultQuota();
             const defaultResetPeriod = await settingsManager.getDefaultResetPeriod();
 
-            const modelName = defaultModel === 'claude-sonnet-4.5' ? 'Claude' : 'Qwen';
+            // Get model display name dynamically
+            const supportedModels = await settingsManager.getSupportedModels();
+            const defaultModelInfo = supportedModels.find(m => m.id === defaultModel);
+            const modelName = defaultModelInfo ? (defaultModelInfo.displayName || defaultModelInfo.name) : defaultModel;
+
             const resetLabel = defaultResetPeriod === 'per5Hours' ? '5h' :
                               defaultResetPeriod === 'perDay' ? 'day' : 'month';
 
+            // Build models list dynamically
+            let modelsListText = '*Available Models:*\n';
+            supportedModels.forEach(model => {
+                const isDefault = model.id === defaultModel ? ' (default)' : '';
+                modelsListText += `• \`${model.id}\` - ${model.displayName || model.name}${isDefault}\n`;
+            });
+
             return '*Usage:* `.aiadd @mention [name] [--model model] [--quota N] [--reset period]`\n\n' +
-                   '*Models:*\n' +
-                   '• `claude` - Claude Sonnet 4.5\n' +
-                   '• `qwen` or empty - Qwen3 Coder Next (default)\n\n' +
+                   modelsListText + '\n' +
                    '*Quota:* (default: ' + defaultQuota + ')\n' +
                    '• Any number between 1-10000\n\n' +
                    '*Reset Period:* (default: ' + resetLabel + ')\n' +
@@ -52,9 +72,9 @@ module.exports = {
                    '• Reset: ' + resetLabel + '\n\n' +
                    '*Examples:*\n' +
                    '• `.aiadd @6281234567890 John Doe`\n' +
-                   '• `.aiadd @6281234567890 Jane --model claude`\n' +
+                   '• `.aiadd @6281234567890 Jane --model claude-haiku-4`\n' +
                    '• `.aiadd @6281234567890 --quota 50 --reset 5h`\n' +
-                   '• `.aiadd @6281234567890 Bob --model claude --quota 200 --reset month`';
+                   '• `.aiadd @6281234567890 Bob --model ' + defaultModel + ' --quota 200 --reset month`';
         }
 
         // Parse parameters
@@ -68,12 +88,25 @@ module.exports = {
         const modelMatch = fullText.match(/--model\s+(\S+)/);
         if (modelMatch) {
             const modelParam = modelMatch[1].toLowerCase();
-            if (modelParam === 'claude') {
-                model = 'claude-sonnet-4.5';
-            } else if (modelParam === 'qwen') {
-                model = 'qwen3-coder-next';
+
+            // Get supported models to validate
+            const supportedModels = await settingsManager.getSupportedModels();
+            const validModelIds = supportedModels.map(m => m.id);
+
+            // Support legacy shorthand aliases for backwards compatibility
+            const aliases = {
+                'claude': 'claude-sonnet-4.5',
+                'qwen': 'qwen3-coder-next',
+                'haiku': 'claude-haiku-4'
+            };
+
+            // Try alias first, then check if it's a valid model ID
+            const resolvedModel = aliases[modelParam] || modelParam;
+
+            if (validModelIds.includes(resolvedModel)) {
+                model = resolvedModel;
             } else {
-                return '*Error:* Invalid model. Use `claude` or `qwen`.';
+                return `*Error:* Invalid model \`${modelParam}\`.\n\nAvailable models:\n${validModelIds.map(id => `• \`${id}\``).join('\n')}`;
             }
         }
 
@@ -154,7 +187,7 @@ module.exports = {
 
                 // Get actual values used (including defaults)
                 const userInfo = (await whitelistManager.getAll()).find(u => u.number === normalized);
-                const actualModel = userInfo?.model || 'qwen3-coder-next';
+                const actualModel = userInfo?.model || await settingsManager.getDefaultModel();
                 const actualQuota = userInfo?.quota || 100;
                 const actualReset = userInfo?.resetPeriod || 'perDay';
 
@@ -175,7 +208,7 @@ module.exports = {
         // Get actual settings for response
         const firstAdded = added[0].jid;
         const userInfo = (await whitelistManager.getAll()).find(u => u.number === firstAdded);
-        const actualModel = userInfo?.model || 'qwen3-coder-next';
+        const actualModel = userInfo?.model || await settingsManager.getDefaultModel();
         const actualQuota = userInfo?.quota || 100;
         const actualReset = userInfo?.resetPeriod || 'perDay';
 
