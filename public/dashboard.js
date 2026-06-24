@@ -1197,15 +1197,38 @@ function renderMemory(memories) {
     const tbody = document.getElementById('memoryTableBody');
 
     if (!memories || memories.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No conversation memory stored</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; opacity: 0.6;">No conversation memory stored</td></tr>';
         return;
     }
 
     tbody.innerHTML = memories.map(mem => {
         const lastUpdated = new Date(mem.lastUpdated).toLocaleString();
+
+        // Determine display name
+        let displayName = 'Unknown';
+        let chatType = '';
+
+        if (mem.groupTitle) {
+            // Group chat
+            displayName = mem.groupTitle;
+            chatType = '👥 ';
+        } else if (mem.pushName) {
+            // Private chat
+            displayName = mem.pushName;
+            chatType = '👤 ';
+        } else {
+            // No name available
+            displayName = mem.roomId.includes('@g.us') ? 'Group Chat' : 'Private Chat';
+            chatType = mem.roomId.includes('@g.us') ? '👥 ' : '👤 ';
+        }
+
+        // Extract clean ID (remove domain)
+        const cleanId = mem.roomId.split('@')[0];
+
         return `
             <tr>
-                <td style="font-family: monospace; font-size: 0.85rem;">${mem.roomId}</td>
+                <td style="font-family: monospace; font-size: 0.85rem;">${cleanId}</td>
+                <td>${chatType}<strong>${displayName}</strong></td>
                 <td>${mem.messageCount} messages</td>
                 <td style="opacity: 0.8;">${lastUpdated}</td>
                 <td>
@@ -1219,7 +1242,7 @@ function renderMemory(memories) {
 
 function renderMemoryError(message) {
     const tbody = document.getElementById('memoryTableBody');
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
 
 // View specific memory

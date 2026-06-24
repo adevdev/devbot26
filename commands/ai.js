@@ -39,7 +39,7 @@ async function generateThumbnail(imageBuffer) {
 
 module.exports = {
     response: async (context, next) => {
-        const { message, command } = context;
+        const { message, command, group } = context;
         const bot = require('wachan');
 
         // Check if models are configured
@@ -274,7 +274,7 @@ module.exports = {
         try {
             // Call AI API with tool support
             console.log(`[AI] Starting API call (model: ${userModel}, endpoint: ${API_ENDPOINT})`);
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message, group);
 
             stopTyping();
 
@@ -313,7 +313,7 @@ module.exports = {
 };
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null) {
+async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null) {
     // Load recent conversation memory for context
     let memoryContext = null;
     try {
@@ -790,33 +790,58 @@ Instead write conversationally for mobile.`;
         }
 
         // Save to memory after successful response
-        await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
+        await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
         return null; // Already sent
     }
 
     // No tools were used - save to memory before returning
     console.log(`[AI] Returning direct response (${finalText.length} chars)`);
-    await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer);
+    await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
     return finalText;
 }
 
 // Helper function to save conversation to memory
-async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage, imageBuffer) {
+async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage, imageBuffer, group = null) {
     try {
+        // Determine room info
+        const roomInfo = {};
+
+        // Check if it's a group or private chat
+        if (roomJid.includes('@g.us')) {
+            // Group chat - use group.subject from context
+            if (group && group.subject) {
+                roomInfo.groupTitle = group.subject;
+            }
+        } else {
+            // Private chat - get push name
+            try {
+                const wachan = require('wachan');
+                const userData = await wachan.getUserData(userMessage.sender.id);
+                if (userData && userData.pushName) {
+                    roomInfo.pushName = userData.pushName;
+                }
+            } catch (error) {
+                // Fallback to message sender name
+                if (userMessage.sender.name) {
+                    roomInfo.pushName = userMessage.sender.name;
+                }
+            }
+        }
+
         // Save user message
         const userMetadata = {
             sender: userMessage?.sender?.id || 'unknown',
             hasImage: !!imageBuffer
         };
-        await memoryManager.saveMessage(roomJid, 'user', userPrompt, userMetadata);
+        await memoryManager.saveMessage(roomJid, 'user', userPrompt, userMetadata, roomInfo);
 
         // Save assistant response
         const assistantMetadata = {
             model: model
         };
-        await memoryManager.saveMessage(roomJid, 'assistant', aiResponse, assistantMetadata);
+        await memoryManager.saveMessage(roomJid, 'assistant', aiResponse, assistantMetadata, roomInfo);
     } catch (error) {
         console.error('[AI] Failed to save to memory:', error.message);
         // Don't throw - memory failure shouldn't break the response

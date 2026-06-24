@@ -81,20 +81,31 @@ class MemoryManager {
         }
     }
 
-    async saveMessage(roomId, role, content, metadata = {}) {
+    async saveMessage(roomId, role, content, metadata = {}, roomInfo = {}) {
         const storageType = this.getStorageType();
 
         if (storageType === 'mongodb') {
-            return this.saveMessageToMongoDB(roomId, role, content, metadata);
+            return this.saveMessageToMongoDB(roomId, role, content, metadata, roomInfo);
         } else {
-            return this.saveMessageToFile(roomId, role, content, metadata);
+            return this.saveMessageToFile(roomId, role, content, metadata, roomInfo);
         }
     }
 
-    async saveMessageToFile(roomId, role, content, metadata = {}) {
+    async saveMessageToFile(roomId, role, content, metadata = {}, roomInfo = {}) {
         try {
             const MAX_MESSAGES = await this.getMaxMessages();
-            const messages = await this.loadMemoryFromFile(roomId);
+            const memoryPath = this.getMemoryPath(roomId);
+
+            // Load existing memory to preserve room info
+            let existingMemory = { messages: [], roomInfo: {} };
+            try {
+                const data = await fs.readFile(memoryPath, 'utf8');
+                existingMemory = JSON.parse(data);
+            } catch (err) {
+                // File doesn't exist yet, that's ok
+            }
+
+            const messages = existingMemory.messages || [];
 
             // Add new message
             messages.push({
@@ -107,10 +118,16 @@ class MemoryManager {
             // Trim to MAX_MESSAGES (keep most recent)
             const trimmed = messages.slice(-MAX_MESSAGES);
 
+            // Update room info if provided
+            const updatedRoomInfo = {
+                ...existingMemory.roomInfo,
+                ...roomInfo
+            };
+
             // Save back to file
-            const memoryPath = this.getMemoryPath(roomId);
             await fs.writeFile(memoryPath, JSON.stringify({
                 roomId: roomId,
+                roomInfo: updatedRoomInfo,
                 messages: trimmed,
                 lastUpdated: new Date().toISOString()
             }, null, 2));
@@ -121,7 +138,7 @@ class MemoryManager {
         }
     }
 
-    async saveMessageToMongoDB(roomId, role, content, metadata = {}) {
+    async saveMessageToMongoDB(roomId, role, content, metadata = {}, roomInfo = {}) {
         try {
             const MAX_MESSAGES = await this.getMaxMessages();
             const mongoClient = await storageHelper.getMongoClient();
@@ -135,20 +152,30 @@ class MemoryManager {
                 ...metadata
             };
 
+            // Prepare update operations
+            const updateOps = {
+                $push: {
+                    messages: {
+                        $each: [newMessage],
+                        $slice: -MAX_MESSAGES // Keep last MAX_MESSAGES only
+                    }
+                },
+                $set: {
+                    lastUpdated: new Date().toISOString()
+                }
+            };
+
+            // Update roomInfo if provided
+            if (Object.keys(roomInfo).length > 0) {
+                Object.keys(roomInfo).forEach(key => {
+                    updateOps.$set[`roomInfo.${key}`] = roomInfo[key];
+                });
+            }
+
             // Push new message and trim to MAX_MESSAGES
             await collection.updateOne(
                 { _id: roomId },
-                {
-                    $push: {
-                        messages: {
-                            $each: [newMessage],
-                            $slice: -MAX_MESSAGES // Keep last MAX_MESSAGES only
-                        }
-                    },
-                    $set: {
-                        lastUpdated: new Date().toISOString()
-                    }
-                },
+                updateOps,
                 { upsert: true }
             );
 
@@ -258,6 +285,8 @@ class MemoryManager {
                         roomId: memory.roomId,
                         messageCount: memory.messages?.length || 0,
                         lastUpdated: memory.lastUpdated,
+                        pushName: memory.roomInfo?.pushName || null,
+                        groupTitle: memory.roomInfo?.groupTitle || null,
                         file: file
                     });
                 }
@@ -281,6 +310,8 @@ class MemoryManager {
                 roomId: doc._id,
                 messageCount: doc.messages?.length || 0,
                 lastUpdated: doc.lastUpdated,
+                pushName: doc.roomInfo?.pushName || null,
+                groupTitle: doc.roomInfo?.groupTitle || null,
                 file: null // No file in MongoDB
             }));
 
