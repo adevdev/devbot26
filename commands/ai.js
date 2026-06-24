@@ -521,8 +521,9 @@ Instead write conversationally for mobile.`;
         toolDefinitions = toolDefinitions.filter(tool => userEnabledTools.includes(tool.name));
         console.log(`[AI] User ${workingIdentifier || message.sender.id} has ${userEnabledTools.length} enabled tools: ${userEnabledTools.join(', ')}`);
     } else {
-        // Empty array = all tools enabled (default)
-        console.log(`[AI] User ${workingIdentifier || message.sender.id} has all tools enabled`);
+        // Empty array = no tools enabled
+        toolDefinitions = [];
+        console.log(`[AI] User ${workingIdentifier || message.sender.id} has no tools enabled`);
     }
 
     // Tool calling loop (max iterations to prevent infinite loops)
@@ -547,33 +548,49 @@ Instead write conversationally for mobile.`;
 
         if (toolUses.length === 0) break;
 
-        // Send progress message for first tool
-        const firstTool = toolUses[0];
-        let progressText = '';
-        if (firstTool.name === 'web_search') {
-            progressText = `🔍 Using web search: _${firstTool.input.query}_`;
-        } else if (firstTool.name === 'fetch_url') {
-            progressText = `📄 Fetching URL: _${firstTool.input.url}_`;
-        } else if (firstTool.name === 'get_time') {
-            progressText = `🕐 Getting current time...`;
-        } else if (firstTool.name === 'image_search') {
-            progressText = `🖼️ Searching images: _${firstTool.input.query}_`;
+        // Validate tools FIRST before sending progress
+        const allowedToolNames = toolDefinitions.map(t => t.name);
+        const allowedToolUses = [];
+        const blockedToolUses = [];
+
+        for (const toolUse of toolUses) {
+            if (allowedToolNames.includes(toolUse.name)) {
+                allowedToolUses.push(toolUse);
+            } else {
+                blockedToolUses.push(toolUse);
+                console.log(`[AI] Tool execution blocked: ${toolUse.name} not in user's enabled tools`);
+            }
         }
 
-        if (progressText) {
-            const bot = require('wachan');
+        // Send progress message only for first ALLOWED tool
+        if (allowedToolUses.length > 0) {
+            const firstTool = allowedToolUses[0];
+            let progressText = '';
+            if (firstTool.name === 'web_search') {
+                progressText = `🔍 Using web search: _${firstTool.input.query}_`;
+            } else if (firstTool.name === 'fetch_url') {
+                progressText = `📄 Fetching URL: _${firstTool.input.url}_`;
+            } else if (firstTool.name === 'get_time') {
+                progressText = `🕐 Getting current time...`;
+            } else if (firstTool.name === 'image_search') {
+                progressText = `🖼️ Searching images: _${firstTool.input.query}_`;
+            }
 
-            if (!progressMsg) {
-                // First progress - send new message (quote user message)
-                const options = { text: progressText };
-                if (userMessage) {
-                    // Pass wachan Message object directly, wachan will call .toBaileys() internally
-                    options.quoted = userMessage;
+            if (progressText) {
+                const bot = require('wachan');
+
+                if (!progressMsg) {
+                    // First progress - send new message (quote user message)
+                    const options = { text: progressText };
+                    if (userMessage) {
+                        // Pass wachan Message object directly, wachan will call .toBaileys() internally
+                        options.quoted = userMessage;
+                    }
+                    progressMsg = await bot.sendMessage(roomJid, options);
+                } else {
+                    // Subsequent progress - edit the existing message
+                    await progressMsg.edit(progressText);
                 }
-                progressMsg = await bot.sendMessage(roomJid, options);
-            } else {
-                // Subsequent progress - edit the existing message
-                await progressMsg.edit(progressText);
             }
         }
 
@@ -581,10 +598,26 @@ Instead write conversationally for mobile.`;
         const toolResults = [];
         let imageSearchResult = null; // Track if image_search was used
 
-        for (const toolUse of toolUses) {
-            let toolResult;
+        // First, handle blocked tools - send error results
+        for (const toolUse of blockedToolUses) {
+            let errorMessage;
+            if (allowedToolNames.length === 0) {
+                errorMessage = `Tool '${toolUse.name}' is not available. You do not have access to any tools. Please answer the user's question directly without using any tools.`;
+            } else {
+                errorMessage = `Tool '${toolUse.name}' is not available. You only have access to: ${allowedToolNames.join(', ')}. Please use only these tools or answer directly without tools.`;
+            }
 
-            // Show progress for known tools
+            toolResults.push({
+                type: 'tool_result',
+                tool_use_id: toolUse.id,
+                content: errorMessage,
+                is_error: true
+            });
+        }
+
+        // Then execute allowed tools
+        for (const toolUse of allowedToolUses) {
+            let toolResult;
             if (toolUse.name === 'image_search') {
                 console.log('[AI] Searching images:', toolUse.input.query);
                 try {
@@ -706,12 +739,54 @@ Instead write conversationally for mobile.`;
 
     // Extract final text response
     const textContent = response.content.find(block => block.type === 'text');
-    let finalText = textContent ? textContent.text.trim() : 'No response generated.';
+    let finalText = textContent ? textContent.text.trim() : '';
+
+    // If no text block but there's thinking block, model didn't finish properly
+    if (!finalText && response.content.some(block => block.type === 'thinking')) {
+        console.log('[AI] Model generated thinking but no text response, retrying...');
+
+        // Add assistant's thinking to messages
+        messages.push({
+            role: 'assistant',
+            content: response.content
+        });
+
+        // Explicitly ask for the actual response
+        messages.push({
+            role: 'user',
+            content: [{
+                type: 'text',
+                text: 'Please provide your actual response to my question.'
+            }]
+        });
+
+        // Retry without tools to force text response
+        const retryResponse = await callAIAPI(messages, [], systemPrompt, model, apiKey, apiEndpoint);
+        const retryTextContent = retryResponse.content.find(block => block.type === 'text');
+        finalText = retryTextContent ? retryTextContent.text.trim() : 'No response generated.';
+    } else if (!finalText) {
+        finalText = 'No response generated.';
+    }
 
     // Remove qwen-specific artifacts (internal tokens that leak into response)
     finalText = finalText.replace(/^<RSPC>\s*/i, ''); // Remove <RSPC> prefix
     finalText = finalText.replace(/^<\/RSPC>\s*/i, ''); // Remove </RSPC> if present
     finalText = finalText.replace(/\*\*/g, ''); // Remove double asterisks (markdown bold)
+
+    // Remove tool tags that might leak through (especially when tool is blocked)
+    finalText = finalText.replace(/<web_search>\s*/gi, '');
+    finalText = finalText.replace(/<\/web_search>\s*/gi, '');
+    finalText = finalText.replace(/<fetch_url>\s*/gi, '');
+    finalText = finalText.replace(/<\/fetch_url>\s*/gi, '');
+    finalText = finalText.replace(/<get_time>\s*/gi, '');
+    finalText = finalText.replace(/<\/get_time>\s*/gi, '');
+    finalText = finalText.replace(/<image_search>\s*/gi, '');
+    finalText = finalText.replace(/<\/image_search>\s*/gi, '');
+
+    // If response is empty after cleanup, provide explanation
+    if (!finalText || finalText.trim().length === 0) {
+        finalText = 'Maaf, saya tidak dapat membantu dengan permintaan ini karena tool yang dibutuhkan tidak tersedia untuk akun Anda.';
+    }
 
     console.log(`[AI] Final text extracted: ${finalText.substring(0, 100)}...`);
     console.log('[AI] Response content blocks:', JSON.stringify(response.content, null, 2));
