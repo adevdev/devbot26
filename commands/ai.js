@@ -75,6 +75,9 @@ module.exports = {
         console.log(`[AI] Command from ${message.sender.id}: ${hasImage ? '[IMAGE] ' : ''}${userText}`);
         console.log(`[${pushName}] [AI]: ${userText.substring(0, 100)}${userText.length > 100 ? '...' : ''}`); // Dashboard will censor if not authenticated
 
+        // Declare workingIdentifier early so it can be set in auto-add and used in quota check
+        let workingIdentifier = null;
+
         // Check whitelist (skip if already checked by fallback handler)
         // ponytail: check both id and lid since @mentions use lid
         if (!command.skipWhitelistCheck) {
@@ -104,6 +107,9 @@ module.exports = {
 
                     // Get accurate user data from WhatsApp
                     let pushName = message.sender.name || null;
+
+                    // IMPORTANT: Always use message.sender.id (without device suffix) for consistency
+                    // Don't use userData.id which may include device-specific suffix like :77
                     let jidToStore = message.sender.id;
 
                     try {
@@ -114,11 +120,8 @@ module.exports = {
                             if (userData.pushName) {
                                 pushName = userData.pushName;
                             }
-                            // Prefer JID over LID if both available
-                            if (userData.id) {
-                                jidToStore = userData.id;
-                            }
-                            console.log(`[AI] Got user data: ${userData.pushName} (JID: ${userData.id}, LID: ${userData.lid || 'none'})`);
+                            // DO NOT use userData.id - it has device suffix which causes mismatch
+                            console.log(`[AI] Got user data: ${userData.pushName} (storing as: ${jidToStore})`);
                         }
                     } catch (userDataError) {
                         console.warn(`[AI] Could not get user data, using message sender info:`, userDataError.message);
@@ -133,25 +136,26 @@ module.exports = {
                     );
                     console.log(`[AI] Auto-added ${jidToStore}: ${defaultModel}, ${defaultQuota}/${defaultResetPeriod}${pushName ? ` (${pushName})` : ''}`);
 
-                    // Important: Mark as no longer needing whitelist check since we just added them
-                    // This allows the quota check to proceed with the newly added user
+                    // Important: Set workingIdentifier immediately after auto-add
+                    // This ensures quota check uses the same identifier we just added
+                    workingIdentifier = jidToStore;
                 }
             }
         }
 
         // Check quota (try both lid and jid, like whitelist check)
         let quotaCheck = null;
-        let workingIdentifier = null; // Track which identifier worked for later increment
 
-        // Try lid first if available
-        if (message.sender.lid) {
+        // Try lid first if available (only if workingIdentifier not already set by auto-add)
+        if (message.sender.lid && !workingIdentifier) {
             quotaCheck = await whitelistManager.checkQuota(message.sender.lid);
             if (quotaCheck.allowed) {
                 workingIdentifier = message.sender.lid;
             }
         }
 
-        // If lid failed or not found, try jid
+        // If lid failed or not found, try jid (unless workingIdentifier already set)
+        if (!workingIdentifier && (!quotaCheck || !quotaCheck.allowed)) {
         if (!quotaCheck || !quotaCheck.allowed) {
             const jidCheck = await whitelistManager.checkQuota(message.sender.id);
             // Use jid result if lid was not whitelisted or jid has better result
