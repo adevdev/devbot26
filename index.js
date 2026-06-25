@@ -16,6 +16,7 @@ let lastActivity = Date.now();
 let reconnectAttempts = 0;
 let healthCheckInterval = null;
 let isReconnecting = false;
+let isIntentionalShutdown = false;
 
 // Intercept console.log to pipe to dashboard (with strict filtering)
 const originalConsoleLog = console.log.bind(console);
@@ -118,6 +119,9 @@ dashboard.onStartBot(async () => {
 dashboard.onStopBot(async () => {
     if (botSocket) {
         try {
+            // Mark as intentional shutdown to prevent auto-reconnect
+            isIntentionalShutdown = true;
+
             // Stop health monitor
             stopHealthMonitor();
 
@@ -799,7 +803,13 @@ wachan.onConnected(async () => {
                 // Stop health monitor on close
                 stopHealthMonitor();
 
-                if (shouldReconnect) {
+                // Check if this was an intentional shutdown
+                if (isIntentionalShutdown) {
+                    console.log('[Connection] Intentional shutdown, not reconnecting');
+                    dashboard.setStatus('disconnected');
+                    botSocket = null;
+                    isIntentionalShutdown = false; // Reset flag
+                } else if (shouldReconnect) {
                     dashboard.setStatus('reconnecting');
                     await reconnectBot();
                 } else {
@@ -913,6 +923,9 @@ async function reconnectBot() {
 
 // Initialize bot
 async function initBot() {
+    // Reset intentional shutdown flag when starting bot
+    isIntentionalShutdown = false;
+
     dashboard.setStatus('connecting');
     console.log('Checking for existing credentials...');
     console.log(`Using credentials storage: ${credentialsManager.getStorageType()}`);
