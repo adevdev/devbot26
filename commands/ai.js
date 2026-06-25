@@ -923,6 +923,21 @@ Instead write conversationally for mobile.`;
 // Helper function to save conversation to memory
 async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage, imageBuffer, group = null) {
     try {
+        // Skip saving if room is bot's own ID (prevent self-memory)
+        const wachan = require('wachan');
+        try {
+            const botData = wachan.getBotData();
+            // Check if roomJid matches bot's ID or LID
+            if (roomJid === botData.id || roomJid === botData.lid ||
+                roomJid === botData.deviceSpecificId || roomJid === botData.deviceSpecificLid) {
+                console.log('[Memory] Skipping save for bot\'s own room:', roomJid);
+                return;
+            }
+        } catch (error) {
+            // If can't get bot data, continue anyway (bot might not be fully started)
+            console.warn('[Memory] Could not verify bot ID, continuing save:', error.message);
+        }
+
         // Determine room info
         const roomInfo = {};
 

@@ -11,6 +11,12 @@ let botStartTime = null;
 let messagesReceived = 0;
 let messagesSent = 0;
 
+// Health monitor vars
+let lastActivity = Date.now();
+let reconnectAttempts = 0;
+let healthCheckInterval = null;
+let isReconnecting = false;
+
 // Intercept console.log to pipe to dashboard (with strict filtering)
 const originalConsoleLog = console.log.bind(console);
 
@@ -112,6 +118,9 @@ dashboard.onStartBot(async () => {
 dashboard.onStopBot(async () => {
     if (botSocket) {
         try {
+            // Stop health monitor
+            stopHealthMonitor();
+
             // Sync credentials before stopping
             await syncCredsToStorage();
 
@@ -709,6 +718,9 @@ async function syncCredsFromStorage() {
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
 
+    // Update activity timestamp
+    lastActivity = Date.now();
+
     // Increment received counter
     messagesReceived++;
 
@@ -762,13 +774,52 @@ wachan.onConnected(async () => {
     // Sync credentials to storage after successful auth
     await syncCredsToStorage();
 
-    // Listen to baileys connection updates for pairing code
+    // Update activity timestamp
+    lastActivity = Date.now();
+
+    // Listen to baileys connection updates for pairing code AND reconnection
     if (botSocket) {
-        botSocket.ev.on('connection.update', (update) => {
-            if (update.code) {
-                console.log(`🔑 PAIRING CODE: ${update.code}`);
+        botSocket.ev.on('connection.update', async (update) => {
+            const { connection, lastDisconnect, code } = update;
+
+            // Update activity on any connection event
+            lastActivity = Date.now();
+
+            if (code) {
+                console.log(`🔑 PAIRING CODE: ${code}`);
                 console.log('Enter this code in WhatsApp > Linked Devices > Link a Device');
             }
+
+            if (connection === 'close') {
+                const statusCode = lastDisconnect?.error?.output?.statusCode;
+                const shouldReconnect = statusCode !== 401; // 401 = loggedOut
+
+                console.log(`[Connection] Closed, status: ${statusCode}, reconnect: ${shouldReconnect}`);
+
+                // Stop health monitor on close
+                stopHealthMonitor();
+
+                if (shouldReconnect) {
+                    dashboard.setStatus('reconnecting');
+                    await reconnectBot();
+                } else {
+                    console.log('[Connection] Logged out, not reconnecting');
+                    dashboard.setStatus('disconnected');
+                    botSocket = null;
+                }
+            } else if (connection === 'open') {
+                console.log('[Connection] Opened successfully');
+                dashboard.setStatus('connected');
+                reconnectAttempts = 0; // Reset on success
+
+                // Start health monitor
+                startHealthMonitor();
+            }
+        });
+
+        // Track activity on messages
+        botSocket.ev.on('messages.upsert', () => {
+            lastActivity = Date.now();
         });
     }
 
@@ -776,6 +827,9 @@ wachan.onConnected(async () => {
     const originalSendMessage = botSocket.sendMessage.bind(botSocket);
 
     botSocket.sendMessage = async (jid, content, options = {}) => {
+        // Update activity on send
+        lastActivity = Date.now();
+
         // Inject ephemeral expiration
         const modifiedOptions = {
             ...options,
@@ -795,6 +849,68 @@ wachan.onError((error) => {
     console.error('Error:', error);
 });
 
+// Health monitor - detects silent connection death
+function startHealthMonitor() {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+    }
+
+    healthCheckInterval = setInterval(() => {
+        const idleTime = Date.now() - lastActivity;
+        const idleMinutes = Math.floor(idleTime / 60000);
+
+        // 10 minutes idle = potential dead connection
+        if (idleTime > 10 * 60 * 1000) {
+            console.log(`[Health] Connection idle for ${idleMinutes}m, forcing reconnect...`);
+
+            // Force close socket to trigger reconnect
+            if (botSocket?.ws) {
+                try {
+                    botSocket.ws.close();
+                } catch (e) {
+                    console.error('[Health] Error closing socket:', e.message);
+                }
+            }
+        }
+    }, 5 * 60 * 1000); // Check every 5 minutes
+}
+
+function stopHealthMonitor() {
+    if (healthCheckInterval) {
+        clearInterval(healthCheckInterval);
+        healthCheckInterval = null;
+    }
+}
+
+// Reconnect with exponential backoff
+async function reconnectBot() {
+    if (isReconnecting) return;
+
+    isReconnecting = true;
+    reconnectAttempts++;
+
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), 30000);
+    console.log(`[Reconnect] Attempt ${reconnectAttempts}, waiting ${delay}ms...`);
+
+    await new Promise(resolve => setTimeout(resolve, delay));
+
+    try {
+        await initBot();
+        isReconnecting = false;
+    } catch (error) {
+        console.error('[Reconnect] Failed:', error.message);
+        isReconnecting = false;
+
+        // Retry if attempts < 10
+        if (reconnectAttempts < 10) {
+            await reconnectBot();
+        } else {
+            console.error('[Reconnect] Max attempts reached, giving up');
+            dashboard.setStatus('error');
+        }
+    }
+}
+
 // Initialize bot
 async function initBot() {
     dashboard.setStatus('connecting');
@@ -812,7 +928,13 @@ async function initBot() {
         console.log(`Starting bot with phone: ${phoneNumber}`);
 
         wachan.start({
-            phoneNumber: phoneNumber
+            phoneNumber: phoneNumber,
+            configOverrides: {
+                keepAliveIntervalMs: 25000,
+                connectTimeoutMs: 60000,
+                defaultQueryTimeoutMs: 60000,
+                markOnlineOnConnect: false
+            }
         });
     } else {
         console.log('Credentials found. Starting bot...');
@@ -822,7 +944,13 @@ async function initBot() {
 
         // Start without phone number - wachan will use existing creds
         wachan.start({
-            phoneNumber: null
+            phoneNumber: null,
+            configOverrides: {
+                keepAliveIntervalMs: 25000,
+                connectTimeoutMs: 60000,
+                defaultQueryTimeoutMs: 60000,
+                markOnlineOnConnect: false
+            }
         });
     }
 }

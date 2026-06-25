@@ -488,8 +488,15 @@ class SettingsManager {
             this.settings.whitelistMode = updates.whitelistMode;
         }
 
+        if (updates.defaultEnabledTools !== undefined) {
+            if (!Array.isArray(updates.defaultEnabledTools)) {
+                throw new Error('defaultEnabledTools must be an array');
+            }
+            this.settings.defaultEnabledTools = updates.defaultEnabledTools;
+        }
+
         await this.save();
-        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, whitelistMode=${this.settings.whitelistMode}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
+        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, whitelistMode=${this.settings.whitelistMode}, tools=${this.settings.defaultEnabledTools?.length || 0}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
     }
 }
 
