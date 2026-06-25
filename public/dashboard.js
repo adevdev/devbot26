@@ -496,6 +496,8 @@ function switchAiSubTab(subTabName, buttonElement) {
     // Load data for specific subtabs
     if (subTabName === 'tools') {
         loadTools();
+    } else if (subTabName === 'prompts') {
+        loadSystemPrompts();
     }
 }
 
@@ -2278,3 +2280,113 @@ document.getElementById('addToolSubmit').addEventListener('click', async () => {
     }
 });
 
+// ===== System Prompts Management =====
+
+let systemPromptsData = [];
+
+async function loadSystemPrompts() {
+    try {
+        const response = await fetch('/api/ai-settings/system-prompts', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            systemPromptsData = data.prompts;
+            renderSystemPrompts();
+        } else {
+            await showAlert('Error', 'Failed to load system prompts: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error loading system prompts: ' + error.message);
+    }
+}
+
+function renderSystemPrompts() {
+    const grid = document.getElementById('systemPromptsGrid');
+    const countEl = document.getElementById('enabledPromptsCount');
+
+    if (systemPromptsData.length === 0) {
+        grid.innerHTML = '<p style="opacity: 0.6; text-align: center; padding: 2rem;">No system prompts found</p>';
+        countEl.textContent = '0 / 0';
+        return;
+    }
+
+    const enabledCount = systemPromptsData.filter(p => p.enabled).length;
+    countEl.textContent = `${enabledCount} / ${systemPromptsData.length}`;
+
+    grid.innerHTML = systemPromptsData.map(prompt => {
+        const categoryColors = {
+            'Core': '#0f0',
+            'Behavior': '#0af',
+            'Format': '#f90',
+            'Custom': '#f0f'
+        };
+        const categoryColor = categoryColors[prompt.category] || '#0f0';
+
+        return `
+            <div style="background: ${prompt.enabled ? '#001100' : '#110000'}; border: 1px solid ${prompt.enabled ? '#0f0' : '#333'}; padding: 1rem; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 0.5rem;">
+                    <div>
+                        <div style="font-weight: bold; color: #0f0; margin-bottom: 0.25rem;">${prompt.name}</div>
+                        <div style="font-size: 0.75rem; color: ${categoryColor}; opacity: 0.8;">${prompt.category}</div>
+                    </div>
+                    <label style="display: flex; align-items: center; cursor: pointer;">
+                        <input type="checkbox"
+                            data-prompt-name="${prompt.name}"
+                            ${prompt.enabled ? 'checked' : ''}
+                            onchange="togglePrompt('${prompt.name}', this.checked)"
+                            style="margin: 0; width: 18px; height: 18px; cursor: pointer;">
+                    </label>
+                </div>
+                <div style="font-size: 0.85rem; opacity: 0.7; line-height: 1.4;">${prompt.description}</div>
+                <div style="font-size: 0.7rem; opacity: 0.5; margin-top: 0.5rem;">File: ${prompt.file}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+function togglePrompt(name, enabled) {
+    const prompt = systemPromptsData.find(p => p.name === name);
+    if (prompt) {
+        prompt.enabled = enabled;
+        renderSystemPrompts();
+    }
+}
+
+function toggleAllPrompts(enable) {
+    systemPromptsData.forEach(p => p.enabled = enable);
+
+    // Update checkboxes
+    document.querySelectorAll('#systemPromptsGrid input[type="checkbox"]').forEach(cb => {
+        cb.checked = enable;
+    });
+
+    renderSystemPrompts();
+}
+
+async function saveSystemPrompts() {
+    try {
+        const enabledPrompts = systemPromptsData
+            .filter(p => p.enabled)
+            .map(p => p.name);
+
+        const response = await fetch('/api/ai-settings/system-prompts', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ enabledPrompts })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            await showAlert('Success', data.message || 'System prompts updated successfully');
+            await loadSystemPrompts(); // Reload to confirm
+        } else {
+            await showAlert('Error', 'Failed to save: ' + data.error);
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error saving system prompts: ' + error.message);
+    }
+}

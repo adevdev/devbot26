@@ -5,6 +5,7 @@ const https = require('https');
 const { Jimp } = require('jimp');
 const memoryManager = require('../memoryManager');
 const tools = require('../tools');
+const systemPromptLoader = require('../systemPromptLoader');
 
 
 // ============================================
@@ -314,6 +315,9 @@ module.exports = {
 
 // Call AI API with tool support (multi-turn)
 async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null, workingIdentifier = null) {
+    // Get bot instance for context
+    const bot = require('wachan');
+
     // Load recent conversation memory for context
     let memoryContext = null;
     try {
@@ -356,130 +360,32 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         }
     }
 
-    // System prompt for WhatsApp formatting
-    const aiIdentity = await settingsManager.getAiIdentity();
-    let systemPrompt = `${aiIdentity}
+    // Build context for system prompt modules (rich context for true modularity)
+    const promptContext = {
+        // Core objects (modules can access anything they need)
+        settingsManager,
+        memoryManager,
+        whitelistManager,
+        bot,
 
-IMPORTANT CONTEXT:
-Current user: ${userName}
-Current date: ${currentDate}
-Current time: ${currentTime}`;
+        // Message context
+        message: userMessage,
+        group,
+        roomJid,
 
-    // Inject memory context if available
-    if (memoryContext) {
-        systemPrompt += `\n\n${memoryContext}\n\n---\n\n**IMPORTANT:** Review the conversation history above FIRST before using any tools. If the user's question can be answered from recent context or follows up on a previous topic, use that information instead of searching the web again. Only use web_search for NEW queries about current events or information not in the conversation history.`;
-    }
+        // Pre-computed values (commonly used)
+        userName,
+        currentDate,
+        currentTime,
+        memoryContext,
 
-    systemPrompt += `
+        // User info
+        workingIdentifier,
+        sender: userMessage?.sender
+    };
 
-CRITICAL INSTRUCTIONS:
-
-1. **ALWAYS respond in the SAME LANGUAGE as the user's current message.**
-   - If user writes in Indonesian, respond in Indonesian
-   - If user writes in English, respond in English
-   - Ignore language from memory/previous messages - only match the LATEST user input language
-   - Example: User says "apa itu bitcoin?" → respond in Indonesian, NOT English
-
-2. Your training data has a knowledge cutoff date. The current date (${currentDate}) may be AFTER your training cutoff.
-- For ANY query about current events, prices, holidays, schedules, news, weather, or time-sensitive information, you MUST use the web_search tool.
-- For queries about "today", "this month", "this year", or specific future dates, ALWAYS use web_search first.
-- Use the get_time tool if you need detailed timestamp information (unix time, ISO format, timezone, etc).
-- When user asks for images/pictures/photos, ONLY use image_search tool. DO NOT use web_search for image requests.
-- The image_search tool returns Pinterest image URLs - use it for any visual content request.
-- Do NOT rely on your training data for time-sensitive information - always search the web first.
-
-WhatsApp Formatting Rules (CRITICAL):
-
-**What NOT to use (will break on WhatsApp):**
-❌ NEVER use double asterisks **text** for bold - WhatsApp only supports single *text*
-❌ NEVER use markdown tables (| column | column |) - they render as plain text
-❌ NEVER use headers with ## or ### - not supported
-❌ NEVER use horizontal rules (---) - use emojis or line breaks instead
-❌ NEVER use code blocks with triple backticks (\`\`\`) - use single backtick for inline code only
-❌ NEVER create structured documentation-style responses with multiple sections
-
-**What TO use:**
-✅ Bold: *text* - SINGLE asterisk only, no spaces after opening or before closing
-   Example: *Bitcoin Price* or *Price:* $50k
-   WRONG: **Bitcoin Price** or ** Price: ** $50k
-✅ Italic: _text_ - single underscores with NO spaces
-   Example: _Source: CoinDesk_
-   WRONG: __Source: CoinDesk__
-✅ Monospace: \`text\` - single backticks for short code/commands only
-   Example: \`/capture <url>\`
-✅ Bullet points with • or - for lists
-✅ Numbered lists: 1. 2. 3.
-✅ Emojis for visual breaks: 💰 📊 📈 ⚡ 🔍 ✅ ❌
-✅ Short paragraphs with empty lines between them
-✅ Conversational, mobile-friendly tone
-
-**Formatting examples:**
-
-WRONG (double asterisks):
-• **Spot Rate:** Rp17.813 per USD
-• **Perubahan:** -9 poin
-
-RIGHT (single asterisks):
-• *Spot Rate:* Rp17.813 per USD
-• *Perubahan:* -9 poin
-
-WRONG (nested formatting in bullets):
-• *BCA:* Beli **Rp17.615** – Jual **Rp17.890**
-
-RIGHT (clean simple format):
-• *BCA:* Beli Rp17.615 – Jual Rp17.890
-
-**Comparison data formatting:**
-WRONG (markdown table):
-| Name | Value |
-|------|-------|
-| Bitcoin | $60k |
-
-RIGHT (simple list):
-*Bitcoin:* $60k
-*Ethereum:* $3.2k
-*Solana:* $120
-
-Or with bullets:
-• Bitcoin: $60k
-• Ethereum: $3.2k
-• Solana: $120
-
-**Multiple items with details:**
-WRONG (structured with headers):
-## Project A
-Description here
-## Project B
-Description here
-
-RIGHT (conversational):
-*Project A*
-Description here
-
-*Project B*
-Description here
-
-Or:
-1. *Project A* - Description here
-2. *Project B* - Description here
-
-Example GOOD response:
-*Bitcoin Price Today* 💰
-
-Current price: $63,850 USD
-
-📈 *24h Change:* +1.35%
-💵 *Market Cap:* $1.28 trillion
-
-_Last updated: ${currentTime}_
-
-Example BAD response (avoid):
-## Bitcoin Analysis
-| Metric | Value |
-|--------|-------|
-| Price | $63,850 |
-
-Instead write conversationally for mobile.`;
+    // Generate system prompt from modular components
+    const systemPrompt = await systemPromptLoader.generate(promptContext);
 
     // Build first user message with optional image
     let firstMessageContent;

@@ -1,0 +1,33 @@
+/**
+ * TEMPLATE: Custom System Prompt Module
+ *
+ * Copy this file and rename to XX-yourname.js (e.g., 60-custom.js)
+ * where XX controls load order (higher = later in final prompt)
+ */
+
+module.exports = async (context) => {
+    // === Available Context ===
+    // Managers: settingsManager, memoryManager, whitelistManager, bot
+    // Message: message, group, roomJid, sender
+    // Pre-computed: userName, currentDate, currentTime, memoryContext
+    // User: workingIdentifier
+
+    // Example: Access user quota
+    // const quota = await context.whitelistManager.getQuotaInfo(context.workingIdentifier);
+
+    // Example: Check if group chat
+    // if (context.group) { /* group-only logic */ }
+
+    // Example: Check message type
+    // if (context.message?.type === 'image') { /* image-specific prompt */ }
+
+    // Example: Access AI settings
+    // const identity = await context.settingsManager.getAiIdentity();
+
+    // Return your prompt text or null to skip
+    return `Your custom system prompt here.
+
+You can use multiple lines.
+
+Access data from context as needed.`;
+};

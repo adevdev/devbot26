@@ -20,6 +20,7 @@ class SettingsManager {
             defaultResetPeriod: 'perDay',
             defaultVisionModel: null, // Must be set by user
             defaultEnabledTools: ['web_search', 'fetch_url', 'get_time', 'image_search'], // Default tools enabled for new users
+            enabledSystemPrompts: [], // Empty array = all enabled, otherwise list of enabled module names
             whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
             aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality
             maxMemoryMessages: 100, // Max messages stored per chat for AI context
@@ -495,8 +496,51 @@ class SettingsManager {
             this.settings.defaultEnabledTools = updates.defaultEnabledTools;
         }
 
+        if (updates.enabledSystemPrompts !== undefined) {
+            if (!Array.isArray(updates.enabledSystemPrompts)) {
+                throw new Error('enabledSystemPrompts must be an array');
+            }
+            this.settings.enabledSystemPrompts = updates.enabledSystemPrompts;
+        }
+
         await this.save();
-        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, whitelistMode=${this.settings.whitelistMode}, tools=${this.settings.defaultEnabledTools?.length || 0}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
+        console.log(`[AI Settings] Updated: model=${this.settings.defaultModel}, quota=${this.settings.defaultQuota}, reset=${this.settings.defaultResetPeriod}, vision=${this.settings.defaultVisionModel}, whitelistMode=${this.settings.whitelistMode}, tools=${this.settings.defaultEnabledTools?.length || 0}, prompts=${this.settings.enabledSystemPrompts?.length || 'all'}, apiOverride=${!!this.settings.apiEndpoint || !!this.settings.apiKey}`);
+    }
+
+    async getEnabledSystemPrompts() {
+        await this.initialize();
+        // Empty array = all enabled (default behavior)
+        return this.settings.enabledSystemPrompts || [];
+    }
+
+    async getAvailableSystemPrompts() {
+        await this.initialize();
+        const systemPromptLoader = require('./systemPromptLoader');
+        return await systemPromptLoader.getAvailableModules();
+    }
+
+    async updateEnabledSystemPrompts(moduleNames) {
+        await this.initialize();
+
+        if (!Array.isArray(moduleNames)) {
+            throw new Error('moduleNames must be an array');
+        }
+
+        // Get available modules
+        const available = await this.getAvailableSystemPrompts();
+        const availableNames = available.map(m => m.name);
+
+        // Validate all names exist
+        const invalid = moduleNames.filter(name => !availableNames.includes(name));
+        if (invalid.length > 0) {
+            throw new Error(`Invalid module names: ${invalid.join(', ')}`);
+        }
+
+        this.settings.enabledSystemPrompts = moduleNames;
+        await this.save();
+
+        console.log(`[AI Settings] Updated enabled system prompts: ${moduleNames.length} modules`);
+        return true;
     }
 }
 

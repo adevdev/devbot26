@@ -1,0 +1,22 @@
+/**
+ * Example: Quota Warning Module
+ * Shows warning when user's quota is low
+ */
+
+module.exports = async (context) => {
+    const { whitelistManager, workingIdentifier } = context;
+
+    try {
+        const quotaInfo = await whitelistManager.getQuotaInfo(workingIdentifier);
+
+        if (quotaInfo.remaining <= 3) {
+            return `⚠️ QUOTA ALERT: You have only ${quotaInfo.remaining} queries remaining for this period. Use wisely!`;
+        }
+
+        // Skip this module if quota is fine
+        return null;
+    } catch (error) {
+        // If error, just skip this module
+        return null;
+    }
+};

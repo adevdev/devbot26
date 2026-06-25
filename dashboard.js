@@ -1145,6 +1145,66 @@ class BotDashboard {
             }
         });
 
+        // API: Get system prompts
+        this.app.get('/api/ai-settings/system-prompts', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const settingsManager = require('./settingsManager');
+                const available = await settingsManager.getAvailableSystemPrompts();
+                const enabled = await settingsManager.getEnabledSystemPrompts();
+
+                // Empty array means all enabled
+                const isAllEnabled = enabled.length === 0;
+
+                const prompts = available.map(prompt => ({
+                    name: prompt.name,
+                    description: prompt.description,
+                    category: prompt.category,
+                    file: prompt.file,
+                    enabled: isAllEnabled || enabled.includes(prompt.name)
+                }));
+
+                res.json({
+                    success: true,
+                    prompts: prompts,
+                    allEnabled: isAllEnabled
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get system prompts: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Update enabled system prompts
+        this.app.put('/api/ai-settings/system-prompts', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { enabledPrompts } = req.body;
+
+                if (!Array.isArray(enabledPrompts)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'enabledPrompts must be an array'
+                    });
+                }
+
+                const settingsManager = require('./settingsManager');
+                await settingsManager.updateEnabledSystemPrompts(enabledPrompts);
+
+                const message = enabledPrompts.length === 0
+                    ? 'All system prompts enabled'
+                    : `Enabled ${enabledPrompts.length} system prompts`;
+
+                this.addLog('success', message);
+                res.json({
+                    success: true,
+                    message: message,
+                    enabledPrompts: enabledPrompts
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to update system prompts: ${error.message}`);
+                res.status(400).json({ success: false, error: error.message });
+            }
+        });
+
         // API: Get all tools
         this.app.get('/api/tools', this.requireAuth.bind(this), async (req, res) => {
             try {

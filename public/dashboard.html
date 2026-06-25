@@ -555,6 +555,7 @@
                 <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Memory</button>
                 <button class="tab-btn" onclick="switchAiSubTab('whitelist', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Whitelist</button>
                 <button class="tab-btn" onclick="switchAiSubTab('tools', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Tools</button>
+                <button class="tab-btn" onclick="switchAiSubTab('prompts', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">System Prompts</button>
             </div>
 
             <!-- Defaults Sub-tab -->
@@ -769,6 +770,34 @@
                         </tr>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- System Prompts Sub-tab -->
+            <div id="ai-subtab-prompts" class="ai-subtab-content" style="display: none;">
+                <div style="margin-bottom: 1rem;">
+                    <h3 style="color: #0f0; margin: 0;">System Prompts</h3>
+                    <p style="opacity: 0.7; font-size: 0.9rem; margin-top: 0.5rem; margin-bottom: 0;">
+                        Modular system prompt components. Toggle modules on/off to customize AI behavior. Empty selection = all enabled.
+                    </p>
+                </div>
+
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div>
+                            <span style="color: #0f0;">Enabled Modules: </span>
+                            <span id="enabledPromptsCount" style="color: #0f0; font-weight: bold;">Loading...</span>
+                        </div>
+                        <div>
+                            <button class="btn btn-small" onclick="toggleAllPrompts(true)" style="margin-right: 0.5rem;">Enable All</button>
+                            <button class="btn btn-small" onclick="toggleAllPrompts(false)">Disable All</button>
+                            <button class="btn" onclick="saveSystemPrompts()" style="margin-left: 1rem;">Save Changes</button>
+                        </div>
+                    </div>
+
+                    <div id="systemPromptsGrid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem;">
+                        <!-- System prompts will be loaded here -->
+                    </div>
+                </div>
             </div>
         </div>
     </div>
