@@ -156,7 +156,6 @@ module.exports = {
 
         // If lid failed or not found, try jid (unless workingIdentifier already set)
         if (!workingIdentifier && (!quotaCheck || !quotaCheck.allowed)) {
-        if (!quotaCheck || !quotaCheck.allowed) {
             const jidCheck = await whitelistManager.checkQuota(message.sender.id);
             // Use jid result if lid was not whitelisted or jid has better result
             if (!quotaCheck || quotaCheck.reason === 'Not whitelisted') {
