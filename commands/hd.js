@@ -116,8 +116,7 @@ module.exports = {
             // Send enhanced image
             const sock = bot.getSocket();
             const imageOptions = {
-                image: enhancedBuffer,
-                caption: '✨ *Image Enhanced*'
+                image: enhancedBuffer
             };
 
             // Add thumbnail if generated successfully
