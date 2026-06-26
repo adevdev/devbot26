@@ -21,15 +21,21 @@ class WhitelistManager {
             fs.mkdirSync(settingsDir, { recursive: true });
         }
 
-        // Load from cache file first (fast)
-        await this.loadFromCache();
-
-        // Sync from MongoDB in background if needed
         const storageType = storageHelper.getStorageType(storageHelper.STORAGE_COMPONENTS.WHITELIST);
+
         if (storageType === 'mongodb') {
-            this.syncFromMongoDB().catch(err => {
-                console.error('Failed to sync whitelist from MongoDB:', err.message);
-            });
+            // MongoDB is source of truth - sync first (blocking), fallback to cache on error
+            try {
+                await this.syncFromMongoDB();
+                console.log('[Whitelist] Initialized from MongoDB');
+            } catch (err) {
+                console.error('[Whitelist] MongoDB sync failed, falling back to cache:', err.message);
+                await this.loadFromCache();
+            }
+        } else {
+            // File storage - just load from cache
+            await this.loadFromCache();
+            console.log('[Whitelist] Initialized from file cache');
         }
 
         this.initialized = true;
@@ -44,16 +50,12 @@ class WhitelistManager {
             if (fs.existsSync(this.cacheFile)) {
                 const data = JSON.parse(fs.readFileSync(this.cacheFile, 'utf-8'));
 
-                // Get default model from settings
-                const settingsManager = require('./settingsManager');
-                const defaultModel = await settingsManager.getDefaultModel();
-
                 // Convert array format to Map
                 if (data.users && Array.isArray(data.users)) {
                     this.whitelist = new Map(data.users.map(u => [
                         u.number,
                         {
-                            model: u.model || defaultModel,
+                            model: u.model, // Keep user's specific model (don't replace with default)
                             pushName: u.pushName || null,
                             jid: u.jid || u.number,
                             quota: u.quota || 100,
@@ -64,11 +66,11 @@ class WhitelistManager {
                         }
                     ]));
                 } else if (data.numbers && Array.isArray(data.numbers)) {
-                    // Legacy format - convert to new format
+                    // Legacy format - convert to new format with null model (will use default when retrieved)
                     this.whitelist = new Map(data.numbers.map(n => [
                         n,
                         {
-                            model: defaultModel,
+                            model: null, // No model stored in legacy format - getModel() will return default
                             pushName: null,
                             jid: n,
                             quota: 100,
@@ -132,15 +134,11 @@ class WhitelistManager {
 
             const doc = await collection.findOne({ _id: 'users' });
 
-            // Get default model from settings
-            const settingsManager = require('./settingsManager');
-            const defaultModel = await settingsManager.getDefaultModel();
-
             if (doc && doc.users) {
                 this.whitelist = new Map(doc.users.map(u => [
                     u.number,
                     {
-                        model: u.model || defaultModel,
+                        model: u.model, // Keep user's specific model (don't replace with default)
                         pushName: u.pushName || null,
                         jid: u.jid || u.number,
                         quota: u.quota || 100,
@@ -205,32 +203,37 @@ class WhitelistManager {
     async addNumber(number, model = null, pushName = null, quota = null, resetPeriod = null) {
         await this.initialize();
 
-        // Get defaults from settingsManager if not provided
-        if (model === null) {
-            model = await settingsManager.getDefaultModel();
-        }
-        if (quota === null) {
-            quota = await settingsManager.getDefaultQuota();
-        }
-        if (resetPeriod === null) {
-            resetPeriod = await settingsManager.getDefaultResetPeriod();
-        }
-
-        // Get default enabled tools
-        const enabledTools = await settingsManager.getDefaultEnabledTools();
-
         // Normalize format: ensure @s.whatsapp.net suffix
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+
+        // Check if user already exists
+        const existingInfo = this.whitelist.get(normalized);
+
+        // Get defaults only for null values
+        if (model === null) {
+            model = existingInfo?.model || await settingsManager.getDefaultModel();
+        }
+        if (quota === null) {
+            quota = existingInfo?.quota || await settingsManager.getDefaultQuota();
+        }
+        if (resetPeriod === null) {
+            resetPeriod = existingInfo?.resetPeriod || await settingsManager.getDefaultResetPeriod();
+        }
+
+        // Preserve existing fields when updating
+        const usageCount = existingInfo?.usageCount || 0;
+        const lastReset = existingInfo?.lastReset || Date.now();
+        const enabledTools = existingInfo?.enabledTools || await settingsManager.getDefaultEnabledTools();
 
         this.whitelist.set(normalized, {
             model,
             pushName,
             jid: normalized,
             quota,
-            usageCount: 0,
+            usageCount,
             resetPeriod,
-            lastReset: Date.now(),
-            enabledTools: enabledTools || [] // Empty = all tools enabled
+            lastReset,
+            enabledTools: enabledTools || []
         });
         await this.syncToMongoDB();
 
@@ -270,18 +273,18 @@ class WhitelistManager {
         const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
         const info = this.whitelist.get(normalized);
 
+        // User not found - return null (caller will try another identifier or use default)
+        if (!info) {
+            return null;
+        }
+
         // Support both old string format and new object format
         if (typeof info === 'string') {
             return info;
         }
 
-        // Return user's model or fallback to system default
-        if (info?.model) {
-            return info.model;
-        }
-
-        const settingsManager = require('./settingsManager');
-        return await settingsManager.getDefaultModel();
+        // Return user's model, or null if not set (caller handles default)
+        return info.model || null;
     }
 
     async getEnabledTools(number) {
