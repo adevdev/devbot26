@@ -22,10 +22,16 @@
 - **MongoDB** - Optional storage for credentials/whitelist (deploy-friendly)
 - **API** - Send messages via HTTP endpoints
 
-<p align="center">
-  <img width="45%" alt="chat" src="https://github.com/user-attachments/assets/ae639a8f-44ba-4f42-8231-98eed9b8a6ec" style="vertical-align: top;" />
-  <img width="45%" alt="response" src="https://github.com/user-attachments/assets/fd05fd2b-c7dd-4cc8-9358-ba4ef706c381" style="vertical-align: top;" />
-</p>
+<table align="center">
+  <tr>
+    <td valign="top" width="45%">
+      <img width="100%" alt="chat" src="https://github.com/user-attachments/assets/ae639a8f-44ba-4f42-8231-98eed9b8a6ec" />
+    </td>
+    <td valign="top" width="45%">
+      <img width="100%" alt="response" src="https://github.com/user-attachments/assets/fd05fd2b-c7dd-4cc8-9358-ba4ef706c381" />
+    </td>
+  </tr>
+</table>
 
 ## Quick Start
 
@@ -92,7 +98,7 @@ Open `http://localhost:3000`, login, enter phone number, link via pairing code.
 ## AI Behavior
 
 **Private chats:** All messages route to AI automatically (no prefix needed, whitelist only or auto-whitelist)
-**Groups:** Use `.ai <question>` or any unknown command (e.g., `.translate`, `.summarize`), or auto fallback to AI with  prefix `.[prompt]`
+**Groups:** Use `.ai <question>` or any unknown command (e.g., `.translate`, `.summarize`)
 
 **Commands:** (owner only)
 - `.aiadd @mention` - Add to whitelist 
