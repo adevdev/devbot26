@@ -1,3 +1,4 @@
+<img width="816" height="774" alt="logo" src="https://github.com/user-attachments/assets/ff915b8c-9c61-4d46-a1c1-7597a38534fe" />
 # DevBot26 - WhatsApp AI Assistant
 
 AI-powered WhatsApp bot with web dashboard. Built with [Wachan](https://npmjs.com/package/wachan).
