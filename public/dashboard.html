@@ -526,6 +526,7 @@
                         <th>Type</th>
                         <th>.ai Cmd</th>
                         <th>Commands</th>
+                        <th>Allowed Commands</th>
                         <th>AI Fallback</th>
                         <th>Ignore All</th>
                         <th>Actions</th>
@@ -533,7 +534,7 @@
                 </thead>
                 <tbody id="roomsTableBody">
                     <tr>
-                        <td colspan="8" style="text-align: center; opacity: 0.6;">Loading rooms...</td>
+                        <td colspan="9" style="text-align: center; opacity: 0.6;">Loading rooms...</td>
                     </tr>
                 </tbody>
             </table>
@@ -1073,14 +1074,26 @@
             <div class="input-group">
                 <label style="display: flex; align-items: center; gap: 0.5rem;">
                     <input type="checkbox" id="editRoomAllowCommands" style="width: 16px; height: 16px; accent-color: #0f0; background: #000; border: 1px solid #0f0; cursor: pointer;">
-                    Allow Commands
+                    Allow All Commands
                 </label>
+                <small style="color: #0f0; opacity: 0.7; margin-top: 0.5rem; display: block;">
+                    Check to allow all commands, or uncheck to select specific commands below
+                </small>
             </div>
             <div class="input-group">
                 <label style="display: flex; align-items: center; gap: 0.5rem;">
                     <input type="checkbox" id="editRoomIgnoreAll" style="width: 16px; height: 16px; accent-color: #0f0; background: #000; border: 1px solid #0f0; cursor: pointer;">
                     Ignore All Messages
                 </label>
+            </div>
+            <div class="input-group" id="editRoomCommandsGroup" style="display: none;">
+                <label>Allowed Commands (when Commands disabled):</label>
+                <div id="editRoomCommandsList" style="max-height: 200px; overflow-y: auto; border: 1px solid #0f0; padding: 0.5rem; background: #000; margin-top: 0.5rem;">
+                    <small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">
+                        Select specific commands to allow when commands are disabled
+                    </small>
+                    <div style="opacity: 0.6;">Loading commands...</div>
+                </div>
             </div>
             <div class="modal-buttons">
                 <button class="btn danger" id="editRoomDelete">Delete Room</button>

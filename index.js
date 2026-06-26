@@ -281,12 +281,12 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
         const commandInfo = commands.getCommandInfo(commandName);
 
         if (commandInfo) {
-            // Valid command exists - check room permissions for groups
-            if (isGroup && context.roomSettings) {
+            // Valid command exists - check room permissions
+            if (context.roomSettings) {
                 const roomManager = require('./roomManager');
                 const allowed = await roomManager.isCommandAllowed(message.room, commandName);
                 if (!allowed) {
-                    // Command not allowed in this room
+                    // Command not allowed in this room - silently ignore
                     return;
                 }
             }

@@ -1124,7 +1124,7 @@ function renderRooms(rooms) {
     const tbody = document.getElementById('roomsTableBody');
 
     if (!rooms || rooms.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; opacity: 0.6;">No rooms configured</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; opacity: 0.6;">No rooms configured</td></tr>';
         return;
     }
 
@@ -1137,6 +1137,19 @@ function renderRooms(rooms) {
             : '<span style="opacity: 0.5;">N/A</span>';
 
         const cmdStatus = room.allowCommands !== false ? '<span style="color: #0f0;">✓ On</span>' : '<span style="color: #f00;">✗ Off</span>';
+
+        // Format allowed commands display
+        const allowedCommands = room.allowedCommands || [];
+        let allowedCmdsDisplay;
+        if (room.allowCommands === false && allowedCommands.length > 0) {
+            const cmdsList = allowedCommands.slice(0, 3).join(', ');
+            const moreCount = allowedCommands.length > 3 ? ` +${allowedCommands.length - 3}` : '';
+            allowedCmdsDisplay = `<span style="color: #0f0; font-size: 0.85rem;">${cmdsList}${moreCount}</span>`;
+        } else if (room.allowCommands === false) {
+            allowedCmdsDisplay = '<span style="opacity: 0.5; color: #f00;">None</span>';
+        } else {
+            allowedCmdsDisplay = '<span style="opacity: 0.5;">—</span>';
+        }
 
         const aiFallbackStatus = isGroup
             ? (room.allowAI !== false ? '<span style="color: #0f0;">✓ On</span>' : '<span style="color: #f00;">✗ Off</span>')
@@ -1151,6 +1164,7 @@ function renderRooms(rooms) {
                 <td>${roomType}</td>
                 <td>${aiCmdStatus}</td>
                 <td>${cmdStatus}</td>
+                <td>${allowedCmdsDisplay}</td>
                 <td>${aiFallbackStatus}</td>
                 <td>${ignoreStatus}</td>
                 <td>
@@ -1163,7 +1177,7 @@ function renderRooms(rooms) {
 
 function renderRoomsError(message) {
     const tbody = document.getElementById('roomsTableBody');
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
 
 // Show add room modal
@@ -1199,7 +1213,6 @@ async function showEditRoomModal(roomId) {
                 document.getElementById('editRoomName').value = room.name || '';
                 document.getElementById('editRoomAllowAiCommand').checked = room.allowAiCommand !== false;
                 document.getElementById('editRoomAllowAI').checked = room.allowAI !== false;
-                document.getElementById('editRoomAllowCommands').checked = room.allowCommands !== false;
                 document.getElementById('editRoomIgnoreAll').checked = room.ignoreAll === true;
 
                 // Hide AI options for private chats
@@ -1211,11 +1224,68 @@ async function showEditRoomModal(roomId) {
                     document.getElementById('editRoomAllowAIGroup').style.display = 'none';
                 }
 
+                // Load commands first
+                const allowedCommands = room.allowedCommands || [];
+                await loadRoomCommands(allowedCommands);
+
+                // Set master checkbox state based on allowCommands
+                // If allowCommands is true (or undefined/null = default), all commands are allowed
+                const allowCommands = room.allowCommands !== false;
+                document.getElementById('editRoomAllowCommands').checked = allowCommands;
+
+                // Always show command list
+                document.getElementById('editRoomCommandsGroup').style.display = 'block';
+
+                // Sync individual checkboxes with master state
+                if (allowCommands) {
+                    // All commands allowed - check all boxes
+                    syncCommandCheckboxes(true);
+                }
+                // If not allowCommands, loadRoomCommands already set the correct checkboxes
+
                 document.getElementById('editRoomModal').showModal();
             }
         }
     } catch (error) {
         await showAlert('Error', 'Failed to load room data: ' + error.message);
+    }
+}
+
+// Load and render command list for room
+async function loadRoomCommands(allowedCommands = []) {
+    try {
+        const response = await fetch('/api/commands', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        const container = document.getElementById('editRoomCommandsList');
+
+        if (data.success && data.commands && data.commands.length > 0) {
+            let html = '<small style="color: #0f0; opacity: 0.7; display: block; margin-bottom: 0.5rem;">Check "Allow All Commands" to enable all, or select specific commands to allow.</small>';
+
+            data.commands.forEach(cmd => {
+                const checked = allowedCommands.includes(cmd.name) ? 'checked' : '';
+                const badge = cmd.temporary ? ' <span class="badge temp" style="font-size: 0.65rem;">TEMP</span>' : '';
+                html += `
+                    <label style="display: flex; align-items: center; margin-bottom: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" name="allowedCommand" value="${cmd.name}" ${checked}
+                               style="margin-right: 0.75rem; cursor: pointer; width: 16px; height: 16px;
+                                      accent-color: #0f0; background: #000; border: 1px solid #0f0;">
+                        <span style="flex: 1;">${cmd.name}${badge}</span>
+                    </label>
+                `;
+            });
+            container.innerHTML = html;
+
+            // Setup listeners after rendering
+            setupCommandCheckboxListeners();
+        } else {
+            container.innerHTML = '<small style="opacity: 0.6;">No commands available</small>';
+        }
+    } catch (error) {
+        console.error('Failed to load commands:', error);
+        document.getElementById('editRoomCommandsList').innerHTML = '<small style="color: #f00;">Failed to load commands</small>';
     }
 }
 
@@ -2070,6 +2140,38 @@ document.getElementById('editRoomCancel').addEventListener('click', () => {
     document.getElementById('editRoomModal').close();
 });
 
+// Master checkbox: sync all command checkboxes when toggled
+document.getElementById('editRoomAllowCommands').addEventListener('change', (e) => {
+    syncCommandCheckboxes(e.target.checked);
+});
+
+// Sync command checkboxes based on master checkbox state
+function syncCommandCheckboxes(checkAll) {
+    const checkboxes = document.querySelectorAll('input[name="allowedCommand"]');
+    checkboxes.forEach(cb => {
+        cb.checked = checkAll;
+    });
+}
+
+// Individual command checkbox: update master checkbox when any individual changes
+function setupCommandCheckboxListeners() {
+    const checkboxes = document.querySelectorAll('input[name="allowedCommand"]');
+    const masterCheckbox = document.getElementById('editRoomAllowCommands');
+
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', () => {
+            // Check if all checkboxes are checked
+            const allCheckboxes = document.querySelectorAll('input[name="allowedCommand"]');
+            const allChecked = Array.from(allCheckboxes).every(checkbox => checkbox.checked);
+            const anyChecked = Array.from(allCheckboxes).some(checkbox => checkbox.checked);
+
+            // If all checked → master should be checked
+            // If any unchecked → master should be unchecked
+            masterCheckbox.checked = allChecked;
+        });
+    });
+}
+
 document.getElementById('editRoomDelete').addEventListener('click', async () => {
     const roomId = document.getElementById('editRoomId').value.trim();
     document.getElementById('editRoomModal').close();
@@ -2081,11 +2183,20 @@ document.getElementById('editRoomSubmit').addEventListener('click', async () => 
     const name = document.getElementById('editRoomName').value.trim();
     const allowAiCommand = document.getElementById('editRoomAllowAiCommand').checked;
     const allowAI = document.getElementById('editRoomAllowAI').checked;
-    const allowCommands = document.getElementById('editRoomAllowCommands').checked;
+    const allowAllCommands = document.getElementById('editRoomAllowCommands').checked;
     const ignoreAll = document.getElementById('editRoomIgnoreAll').checked;
+
+    // Collect allowed commands from checkboxes
+    const allowedCommandsCheckboxes = document.querySelectorAll('input[name="allowedCommand"]:checked');
+    const allowedCommands = Array.from(allowedCommandsCheckboxes).map(cb => cb.value);
 
     // Detect if group or private
     const isGroup = roomId.includes('@g.us');
+
+    // Determine allowCommands value:
+    // - If master checkbox is checked → allowCommands = true (all allowed)
+    // - If master checkbox is unchecked → allowCommands = false (use whitelist)
+    const allowCommands = allowAllCommands;
 
     try {
         const response = await fetch(`/api/rooms/${encodeURIComponent(roomId)}`, {
@@ -2095,9 +2206,10 @@ document.getElementById('editRoomSubmit').addEventListener('click', async () => 
             body: JSON.stringify({
                 name: name || null,
                 allowAiCommand: isGroup ? allowAiCommand : null,
-                allowAI: isGroup ? allowAI : null, // null for private = N/A
+                allowAI: isGroup ? allowAI : null,
                 allowCommands,
-                ignoreAll
+                ignoreAll,
+                allowedCommands: allowCommands ? [] : allowedCommands // Only send whitelist if disabled
             })
         });
 
