@@ -1,10 +1,16 @@
-<img width="200" height="200" alt="logo" src="https://github.com/user-attachments/assets/ff915b8c-9c61-4d46-a1c1-7597a38534fe" />
+<p align="center">
+  <img width="200" height="200" alt="logo" src="https://github.com/user-attachments/assets/ff915b8c-9c61-4d46-a1c1-7597a38534fe" />
+</p>
 
-# DevBot26 - WhatsApp AI Assistant
+<h1 align="center">DevBot26 - WhatsApp AI Assistant</h1>
 
-AI-powered WhatsApp bot with web dashboard. Built with [Wachan](https://npmjs.com/package/wachan).
+<p align="center">
+  AI-powered WhatsApp bot with web dashboard. Built with <a href="https://npmjs.com/package/wachan">Wachan</a>.
+</p>
 
-<img width="949" height="478" alt="image" src="https://github.com/user-attachments/assets/23a17f90-1305-487d-9d42-98f9d77583b9" />
+<p align="center">
+  <img width="949" height="478" alt="image" src="https://github.com/user-attachments/assets/23a17f90-1305-487d-9d42-98f9d77583b9" />
+</p>
 
 
 ## Features
