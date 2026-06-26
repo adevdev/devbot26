@@ -146,22 +146,27 @@ module.exports = {
         // Check quota (try both lid and jid, like whitelist check)
         let quotaCheck = null;
 
-        // Try lid first if available (only if workingIdentifier not already set by auto-add)
-        if (message.sender.lid && !workingIdentifier) {
-            quotaCheck = await whitelistManager.checkQuota(message.sender.lid);
-            if (quotaCheck.allowed) {
-                workingIdentifier = message.sender.lid;
+        // If workingIdentifier already set (e.g. from auto-add), use it directly
+        if (workingIdentifier) {
+            quotaCheck = await whitelistManager.checkQuota(workingIdentifier);
+        } else {
+            // Try lid first if available
+            if (message.sender.lid) {
+                quotaCheck = await whitelistManager.checkQuota(message.sender.lid);
+                if (quotaCheck.allowed) {
+                    workingIdentifier = message.sender.lid;
+                }
             }
-        }
 
-        // If lid failed or not found, try jid (unless workingIdentifier already set)
-        if (!workingIdentifier && (!quotaCheck || !quotaCheck.allowed)) {
-            const jidCheck = await whitelistManager.checkQuota(message.sender.id);
-            // Use jid result if lid was not whitelisted or jid has better result
-            if (!quotaCheck || quotaCheck.reason === 'Not whitelisted') {
-                quotaCheck = jidCheck;
-                if (jidCheck.allowed) {
-                    workingIdentifier = message.sender.id;
+            // If lid failed or not found, try jid
+            if (!workingIdentifier && (!quotaCheck || !quotaCheck.allowed)) {
+                const jidCheck = await whitelistManager.checkQuota(message.sender.id);
+                // Use jid result if lid was not whitelisted or jid has better result
+                if (!quotaCheck || quotaCheck.reason === 'Not whitelisted') {
+                    quotaCheck = jidCheck;
+                    if (jidCheck.allowed) {
+                        workingIdentifier = message.sender.id;
+                    }
                 }
             }
         }
