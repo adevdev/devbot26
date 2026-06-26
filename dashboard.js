@@ -77,6 +77,7 @@ class BotDashboard {
         this.app.use(sessionMiddleware);
         this.app.use(express.json());
         this.app.use(express.static(path.join(__dirname, 'public')));
+        this.app.use('/tmp', express.static(path.join(__dirname, 'tmp'))); // Serve temp files
 
         // Share session with socket.io
         this.io.use((socket, next) => {
