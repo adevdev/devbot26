@@ -219,11 +219,7 @@ module.exports = {
 
         return {
             text: `✅ *Added to AI Whitelist*\n\n` +
-                  `${numberList}\n\n` +
-                  `*Settings:*\n` +
-                  `• Model: ${actualModel}\n` +
-                  `• Quota: ${actualQuota} requests\n` +
-                  `• Reset: ${resetLabel}`,
+                  `${numberList}`,
             mentions: mentionList
         };
     },
