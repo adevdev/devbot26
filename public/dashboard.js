@@ -491,7 +491,11 @@ function switchAiSubTab(subTabName, buttonElement) {
     document.querySelectorAll('.ai-subtab-content').forEach(content => {
         content.style.display = 'none';
     });
-    document.getElementById(`ai-subtab-${subTabName}`).style.display = 'block';
+    const targetTab = document.getElementById(`ai-subtab-${subTabName}`);
+    targetTab.style.display = 'block';
+
+    // Force reflow before loading data
+    void targetTab.offsetHeight;
 
     // Load data for specific subtabs
     if (subTabName === 'tools') {
@@ -1418,7 +1422,7 @@ function renderWhitelist(users) {
     const tbody = document.getElementById('whitelistTableBody');
 
     if (users.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; opacity: 0.6;">No users in AI whitelist</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align: center; opacity: 0.6;">No users in AI whitelist</td></tr>';
         return;
     }
 
@@ -1435,7 +1439,7 @@ function renderWhitelist(users) {
 
         // Store in global array for easy access
         if (!window.whitelistUserData) window.whitelistUserData = {};
-        window.whitelistUserData[number] = { enabledTools };
+        window.whitelistUserData[number] = { enabledTools, model, quota, resetPeriod, usageCount, pushName };
 
         // Extract JID number (before @ symbol)
         const jidNumber = jid.split('@')[0];
@@ -1474,6 +1478,10 @@ function renderWhitelist(users) {
 
         return `
             <tr>
+                <td style="text-align: center;">
+                    <input type="checkbox" class="user-checkbox" data-number="${encodedNumber}" onchange="updateBatchToolbar()"
+                           style="cursor: pointer; width: 16px; height: 16px; accent-color: #0f0; background: #000; border: 1px solid #0f0;">
+                </td>
                 <td style="font-family: monospace; font-size: 0.85rem;">${jidNumber}</td>
                 <td><strong>${pushName}</strong></td>
                 <td><span class="badge">${modelDisplay}</span></td>
@@ -1501,8 +1509,425 @@ async function showEditWhitelistModalFromNumber(encodedNumber, encodedModel, enc
 // Render whitelist error
 function renderWhitelistError(message) {
     const tbody = document.getElementById('whitelistTableBody');
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: #f00;">${message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: #f00;">${message}</td></tr>`;
 }
+
+// ============================================
+// Batch Operations for Whitelist
+// ============================================
+
+// Show batch operation progress
+function showBatchProgress(message, current = 0, total = 0) {
+    let progressDiv = document.getElementById('batchProgress');
+
+    if (!progressDiv) {
+        // Create progress indicator
+        progressDiv = document.createElement('div');
+        progressDiv.id = 'batchProgress';
+        progressDiv.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #000;
+            border: 2px solid #0f0;
+            padding: 2rem;
+            border-radius: 8px;
+            z-index: 10000;
+            min-width: 300px;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(0, 255, 0, 0.3);
+            display: block;
+        `;
+        document.body.appendChild(progressDiv);
+    }
+
+    const progressText = total > 0 ? `${current}/${total}` : '';
+    progressDiv.innerHTML = `
+        <div style="color: #0f0; font-size: 1.2rem; margin-bottom: 1rem;">
+            ⟳ ${message}
+        </div>
+        ${progressText ? `<div style="color: #0f0; font-size: 1.5rem; font-weight: bold;">${progressText}</div>` : ''}
+        ${total > 0 ? `
+            <div style="margin-top: 1rem; background: #001a00; border: 1px solid #0f0; height: 20px; border-radius: 10px; overflow: hidden;">
+                <div style="background: #0f0; height: 100%; width: ${(current/total)*100}%; transition: width 0.3s;"></div>
+            </div>
+        ` : `<div style="margin-top: 1rem; color: #0f0;">⏳</div>`}
+    `;
+}
+
+// Hide batch operation progress
+function hideBatchProgress() {
+    const progressDiv = document.getElementById('batchProgress');
+    if (progressDiv) {
+        progressDiv.remove();
+    }
+}
+
+// Toggle select all checkboxes
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.user-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateBatchToolbar();
+}
+
+// Update batch toolbar visibility and count
+function updateBatchToolbar() {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    const count = checkboxes.length;
+    const toolbar = document.getElementById('batchOpsToolbar');
+    const countSpan = document.getElementById('selectedCount');
+    const selectAll = document.getElementById('selectAllWhitelist');
+
+    if (count > 0) {
+        toolbar.style.display = 'block';
+        countSpan.textContent = count;
+    } else {
+        toolbar.style.display = 'none';
+        selectAll.checked = false;
+    }
+}
+
+// Clear all selections
+function clearSelection() {
+    document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAllWhitelist').checked = false;
+    updateBatchToolbar();
+}
+
+// Get selected user numbers
+function getSelectedUsers() {
+    const checkboxes = document.querySelectorAll('.user-checkbox:checked');
+    return Array.from(checkboxes).map(cb => decodeURIComponent(cb.dataset.number));
+}
+
+// Batch delete users
+async function batchDelete() {
+    const users = getSelectedUsers();
+    if (users.length === 0) return;
+
+    const confirmed = await showConfirm(
+        'Delete Users',
+        `Are you sure you want to delete ${users.length} user(s) from whitelist?\n\nThis cannot be undone.`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        showBatchProgress('Deleting users...', 0, users.length);
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < users.length; i++) {
+            const number = users[i];
+            showBatchProgress('Deleting users...', i + 1, users.length);
+
+            try {
+                const response = await fetch(`/api/whitelist/${encodeURIComponent(number)}`, {
+                    method: 'DELETE'
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (error) {
+                failCount++;
+            }
+        }
+
+        hideBatchProgress();
+
+        if (successCount > 0) {
+            await showAlert('Success', `Deleted ${successCount} user(s) successfully${failCount > 0 ? `, ${failCount} failed` : ''}`);
+            await loadWhitelist(); // Reload whitelist
+            clearSelection();
+        } else {
+            await showAlert('Error', 'Failed to delete users');
+        }
+    } catch (error) {
+        hideBatchProgress();
+        await showAlert('Error', 'Error during batch delete: ' + error.message);
+    }
+}
+
+// Show batch model change modal
+async function showBatchModelModal() {
+    const users = getSelectedUsers();
+    if (users.length === 0) return;
+
+    const models = window.cachedModels || [];
+    if (models.length === 0) {
+        await showAlert('Error', 'No models available');
+        return;
+    }
+
+    const modelOptions = models.filter(m => m.enabled).map(m =>
+        `<option value="${m.id}">${m.displayName || m.name}</option>`
+    ).join('');
+
+    const modal = document.createElement('dialog');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3 class="modal-title">Change Model (${users.length} users)</h3>
+            <div class="modal-body">
+                <label style="display: block; margin-bottom: 0.5rem; color: #0f0;">Select Model:</label>
+                <select id="batchModelSelect" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    ${modelOptions}
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="batchModelCancel">Cancel</button>
+                <button class="btn" id="batchModelSubmit">Update</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    modal.querySelector('#batchModelCancel').onclick = () => {
+        modal.close();
+        modal.remove();
+    };
+
+    modal.querySelector('#batchModelSubmit').onclick = async () => {
+        const selectedModel = document.getElementById('batchModelSelect').value;
+
+        // Close modal first
+        modal.close();
+        modal.remove();
+
+        // Let browser render before showing loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        await executeBatchUpdate(users, { model: selectedModel }, 'model');
+    };
+}
+
+// Show batch quota update modal
+async function showBatchQuotaModal() {
+    const users = getSelectedUsers();
+    if (users.length === 0) return;
+
+    const modal = document.createElement('dialog');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3 class="modal-title">Update Quota (${users.length} users)</h3>
+            <div class="modal-body">
+                <label style="display: block; margin-bottom: 0.5rem; color: #0f0;">New Quota:</label>
+                <input type="number" id="batchQuotaInput" min="1" max="10000" value="30" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="batchQuotaCancel">Cancel</button>
+                <button class="btn" id="batchQuotaSubmit">Update</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    modal.querySelector('#batchQuotaCancel').onclick = () => {
+        modal.close();
+        modal.remove();
+    };
+
+    modal.querySelector('#batchQuotaSubmit').onclick = async () => {
+        const quota = parseInt(document.getElementById('batchQuotaInput').value);
+        if (quota < 1 || quota > 10000) {
+            await showAlert('Error', 'Quota must be between 1 and 10000');
+            return;
+        }
+
+        // Close modal first
+        modal.close();
+        modal.remove();
+
+        // Let browser render before showing loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        await executeBatchUpdate(users, { quota }, 'quota');
+    };
+}
+
+// Show batch reset period modal
+async function showBatchResetModal() {
+    const users = getSelectedUsers();
+    if (users.length === 0) return;
+
+    const modal = document.createElement('dialog');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3 class="modal-title">Change Reset Period (${users.length} users)</h3>
+            <div class="modal-body">
+                <label style="display: block; margin-bottom: 0.5rem; color: #0f0;">Reset Period:</label>
+                <select id="batchResetSelect" style="width: 100%; background: #000; color: #0f0; border: 1px solid #0f0; padding: 0.5rem; font-family: 'Courier New', monospace; font-size: 0.9rem;">
+                    <option value="per5Hours">Every 5 Hours</option>
+                    <option value="perDay" selected>Daily</option>
+                    <option value="perMonth">Monthly</option>
+                </select>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="batchResetCancel">Cancel</button>
+                <button class="btn" id="batchResetSubmit">Update</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    modal.querySelector('#batchResetCancel').onclick = () => {
+        modal.close();
+        modal.remove();
+    };
+
+    modal.querySelector('#batchResetSubmit').onclick = async () => {
+        const resetPeriod = document.getElementById('batchResetSelect').value;
+
+        // Close modal first
+        modal.close();
+        modal.remove();
+
+        // Let browser render before showing loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        await executeBatchUpdate(users, { resetPeriod }, 'reset period');
+    };
+}
+
+// Show batch tools update modal
+async function showBatchToolsModal() {
+    const users = getSelectedUsers();
+    if (users.length === 0) return;
+
+    // Get available tools
+    const availableTools = window.availableAiTools || [];
+    if (availableTools.length === 0) {
+        await showAlert('Error', 'No tools available');
+        return;
+    }
+
+    const toolCheckboxes = availableTools.map(tool => `
+        <label style="display: flex; align-items: center; margin-bottom: 0.5rem; cursor: pointer;">
+            <input type="checkbox" class="batch-tool-checkbox" value="${tool.name}"
+                   style="margin-right: 0.75rem; cursor: pointer; width: 16px; height: 16px;
+                          accent-color: #0f0; background: #000; border: 1px solid #0f0;">
+            <span style="flex: 1; color: #0f0; font-family: 'Courier New', monospace;">${tool.name}</span>
+            <span style="opacity: 0.7; font-size: 0.85rem; margin-left: 0.5rem;">${tool.description}</span>
+        </label>
+    `).join('');
+
+    const modal = document.createElement('dialog');
+    modal.innerHTML = `
+        <div class="modal-content">
+            <h3 class="modal-title">Update Tools (${users.length} users)</h3>
+            <div class="modal-body">
+                <div style="margin-bottom: 1rem;">
+                    <button class="btn btn-small" onclick="document.querySelectorAll('.batch-tool-checkbox').forEach(cb => cb.checked = true)" style="margin-right: 0.5rem;">Select All</button>
+                    <button class="btn btn-small" onclick="document.querySelectorAll('.batch-tool-checkbox').forEach(cb => cb.checked = false)">Clear All</button>
+                </div>
+                <div style="max-height: 300px; overflow-y: auto; border: 1px solid #0f0; padding: 0.5rem; background: #001a00;">
+                    ${toolCheckboxes}
+                </div>
+            </div>
+            <div class="modal-buttons">
+                <button class="btn" id="batchToolsCancel">Cancel</button>
+                <button class="btn" id="batchToolsSubmit">Update</button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(modal);
+    modal.showModal();
+
+    modal.querySelector('#batchToolsCancel').onclick = () => {
+        modal.close();
+        modal.remove();
+    };
+
+    modal.querySelector('#batchToolsSubmit').onclick = async () => {
+        const selectedTools = Array.from(document.querySelectorAll('.batch-tool-checkbox:checked'))
+            .map(cb => cb.value);
+
+        // Close modal first
+        modal.close();
+        modal.remove();
+
+        // Let browser render before showing loading
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        await executeBatchUpdate(users, { enabledTools: selectedTools }, 'tools');
+    };
+}
+
+// Execute batch update
+async function executeBatchUpdate(users, updateData, fieldName) {
+    try {
+        showBatchProgress(`Updating ${fieldName}...`, 0, users.length);
+
+        let successCount = 0;
+        let failCount = 0;
+
+        for (let i = 0; i < users.length; i++) {
+            const number = users[i];
+            showBatchProgress(`Updating ${fieldName}...`, i + 1, users.length);
+
+            try {
+                // Get current user data
+                const userData = window.whitelistUserData[number];
+                if (!userData) {
+                    failCount++;
+                    continue;
+                }
+
+                // Merge update with current data
+                const payload = {
+                    model: updateData.model || userData.model,
+                    pushName: userData.pushName,
+                    quota: updateData.quota !== undefined ? updateData.quota : userData.quota,
+                    usageCount: userData.usageCount,
+                    resetPeriod: updateData.resetPeriod || userData.resetPeriod,
+                    enabledTools: updateData.enabledTools !== undefined ? updateData.enabledTools : userData.enabledTools
+                };
+
+                const response = await fetch(`/api/whitelist/${encodeURIComponent(number)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
+            } catch (error) {
+                failCount++;
+            }
+        }
+
+        hideBatchProgress();
+
+        if (successCount > 0) {
+            await showAlert('Success', `Updated ${fieldName} for ${successCount} user(s)${failCount > 0 ? `, ${failCount} failed` : ''}`);
+            await loadWhitelist(); // Reload whitelist
+            clearSelection();
+        } else {
+            await showAlert('Error', `Failed to update ${fieldName}`);
+        }
+    } catch (error) {
+        hideBatchProgress();
+        await showAlert('Error', 'Error during batch update: ' + error.message);
+    }
+}
+
+// ============================================
+// End Batch Operations
+// ============================================
 
 // Show add whitelist modal
 async function showAddWhitelistModal() {
@@ -1763,6 +2188,16 @@ function restoreTabFromURL() {
                     const targetSubTab = document.getElementById(`ai-subtab-${subTab}`);
                     if (targetSubTab) {
                         targetSubTab.style.display = 'block';
+
+                        // Force reflow
+                        void targetSubTab.offsetHeight;
+
+                        // Load data for specific subtabs
+                        if (subTab === 'tools') {
+                            loadTools();
+                        } else if (subTab === 'prompts') {
+                            loadSystemPrompts();
+                        }
                     }
                 }
             } else {
@@ -2336,7 +2771,7 @@ function renderSystemPrompts() {
                             data-prompt-name="${prompt.name}"
                             ${prompt.enabled ? 'checked' : ''}
                             onchange="togglePrompt('${prompt.name}', this.checked)"
-                            style="margin: 0; width: 18px; height: 18px; cursor: pointer;">
+                            style="margin: 0; width: 16px; height: 16px; cursor: pointer; accent-color: #0f0; background: #000; border: 1px solid #0f0;">
                     </label>
                 </div>
                 <div style="font-size: 0.85rem; opacity: 0.7; line-height: 1.4;">${prompt.description}</div>
