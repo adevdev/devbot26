@@ -185,7 +185,8 @@ class RoomManager {
         const settings = await this.getRoomSettings(roomId);
         if (!settings) return true;
         if (settings.allowCommands !== false) return true;
-        // If commands disabled, check allowlist
+
+        // Whitelist mode - check if command is in allowed list
         return settings.allowedCommands?.includes(commandName) || false;
     }
 
@@ -246,6 +247,9 @@ class RoomManager {
         } else {
             await this.saveToFile();
         }
+
+        // Invalidate cache so next getRoomSettings() loads fresh data
+        this.lastSync = 0;
 
         console.log(`[Room Manager] Updated room: ${roomId}`);
         return room;

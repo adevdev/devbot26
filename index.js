@@ -181,25 +181,19 @@ commands.beforeEach(async (context, next) => {
         return;
     }
 
-    // Check if commands are disabled for this room
-    if (roomSettings.allowCommands === false) {
-        // Commands disabled
+    // Check if command is allowed in this room
+    const commandName = command.name;
+    const allowed = await roomManager.isCommandAllowed(roomId, commandName);
+
+    if (!allowed) {
+        // Command not allowed - silently ignore
         return;
     }
 
-    // Special check for .ai command - can be disabled separately
-    if (command.name === 'ai' || command.aliases?.includes('ai')) {
-        const isGroup = !!group;
-        // For groups, check allowAiCommand setting
-        if (isGroup && roomSettings.allowAiCommand === false) {
-            // .ai command disabled for this group
-            return;
-        }
-    }
-
-    // Store settings in context for later use
+    // Store roomSettings in context for later use
     context.roomSettings = roomSettings;
 
+    // Continue to next middleware
     next();
 });
 
@@ -285,6 +279,7 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
             if (context.roomSettings) {
                 const roomManager = require('./roomManager');
                 const allowed = await roomManager.isCommandAllowed(message.room, commandName);
+
                 if (!allowed) {
                     // Command not allowed in this room - silently ignore
                     return;

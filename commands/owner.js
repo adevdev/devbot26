@@ -12,7 +12,7 @@ module.exports = {
         return {
             contacts: [
                 {
-                    name: 'Bot Owner',
+                    name: 'Devrian',
                     number: phoneNumber
                 }
             ]
