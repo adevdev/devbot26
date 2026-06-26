@@ -2,7 +2,8 @@
 
 AI-powered WhatsApp bot with web dashboard. Built with [Wachan](https://npmjs.com/package/wachan).
 
-<img width="847" height="467" alt="Dashboard" src="https://github.com/user-attachments/assets/9ec54f3a-34d4-47af-98fe-e82613380aeb" />
+<img width="949" height="478" alt="image" src="https://github.com/user-attachments/assets/23a17f90-1305-487d-9d42-98f9d77583b9" />
+
 
 ## Features
 
