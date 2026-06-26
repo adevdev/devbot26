@@ -98,17 +98,7 @@ module.exports = {
                 quality: quality
             });
 
-            // Sticker type: send buffer directly
-            // Non-sticker: use toMessage() for typing indicator
-            if (targetMessage.type === 'sticker') {
-                const sock = bot.getSocket();
-                const stickerBuffer = await sticker.toBuffer();
-                await sock.sendMessage(message.room, { sticker: stickerBuffer });
-                await message.react("✅");
-                return;
-            }
-
-            // Use typing indicator for non-sticker
+            // Generate sticker message
             const stickerMessage = await withTyping(bot, message.room, async () => {
                 return await sticker.toMessage();
             });
