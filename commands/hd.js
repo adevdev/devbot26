@@ -6,6 +6,24 @@
 const fs = require('fs/promises');
 const path = require('path');
 const axios = require('axios');
+const { Jimp } = require('jimp');
+
+// Generate 5% thumbnail to prevent baileys auto-generation (sharp crash on Render)
+async function generateThumbnail(imageBuffer) {
+    try {
+        console.log('[HD] Generating thumbnail with jimp...');
+        const image = await Jimp.read(imageBuffer);
+        const width = Math.max(1, Math.floor(image.bitmap.width * 0.05));
+        const height = Math.max(1, Math.floor(image.bitmap.height * 0.05));
+        console.log(`[HD] Thumbnail: ${width}x${height}`);
+        const resized = await image.resize({ w: width, h: height });
+        const thumb = await resized.getBuffer('image/jpeg');
+        return thumb;
+    } catch (error) {
+        console.error('[HD] Thumbnail generation failed:', error.message);
+        return null;
+    }
+}
 
 module.exports = {
     response: async (context, next) => {
@@ -92,12 +110,22 @@ module.exports = {
             });
             const enhancedBuffer = Buffer.from(enhancedResponse.data);
 
+            // Generate thumbnail to prevent baileys sharp crash on Render
+            const thumbnail = await generateThumbnail(enhancedBuffer);
+
             // Send enhanced image
             const sock = bot.getSocket();
-            await sock.sendMessage(message.room, {
+            const imageOptions = {
                 image: enhancedBuffer,
                 caption: '✨ *Image Enhanced*'
-            }, {
+            };
+
+            // Add thumbnail if generated successfully
+            if (thumbnail) {
+                imageOptions.jpegThumbnail = thumbnail;
+            }
+
+            await sock.sendMessage(message.room, imageOptions, {
                 quoted: message.toBaileys()
             });
 
