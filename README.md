@@ -22,6 +22,11 @@
 - **MongoDB** - Optional storage for credentials/whitelist (deploy-friendly)
 - **API** - Send messages via HTTP endpoints
 
+<p align="center">
+  <img width="45%" alt="chat" src="https://github.com/user-attachments/assets/ae639a8f-44ba-4f42-8231-98eed9b8a6ec" />
+  <img width="45%" alt="response" src="https://github.com/user-attachments/assets/fd05fd2b-c7dd-4cc8-9358-ba4ef706c381" />
+</p>
+
 ## Quick Start
 
 ```bash
