@@ -886,6 +886,90 @@ class BotDashboard {
             }
         });
 
+        // ============================================
+        // Contact Management API Routes
+        // ============================================
+
+        // API: Get all contacts
+        this.app.get('/api/contacts', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const contactManager = require('./contactManager');
+                const contacts = await contactManager.getAllContacts();
+
+                res.json({
+                    success: true,
+                    contacts: contacts
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get contacts: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Add contact
+        this.app.post('/api/contacts', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { jid, name, type } = req.body;
+
+                if (!jid || !name || !type) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Missing required fields: jid, name, type'
+                    });
+                }
+
+                if (!['user', 'group'].includes(type)) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Type must be "user" or "group"'
+                    });
+                }
+
+                const contactManager = require('./contactManager');
+
+                // Check if already exists
+                const existing = await contactManager.getContact(jid);
+                if (existing) {
+                    return res.status(400).json({
+                        success: false,
+                        error: 'Contact already exists'
+                    });
+                }
+
+                await contactManager.addContact(jid, name, type, 'dashboard');
+
+                this.addLog('success', `Added contact: ${name} (${type})`);
+                res.json({
+                    success: true,
+                    message: 'Contact added'
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to add contact: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Delete contact
+        this.app.delete('/api/contacts/:jid', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { jid } = req.params;
+                const decodedJid = decodeURIComponent(jid);
+
+                const contactManager = require('./contactManager');
+                const existed = await contactManager.removeContact(decodedJid);
+
+                if (existed) {
+                    this.addLog('success', `Removed contact: ${decodedJid}`);
+                    res.json({ success: true, message: 'Contact removed' });
+                } else {
+                    res.status(404).json({ success: false, error: 'Contact not found' });
+                }
+            } catch (error) {
+                this.addLog('error', `Failed to remove contact: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // API: Get AI default settings
         this.app.get('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
             try {

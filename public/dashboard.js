@@ -44,6 +44,17 @@ let awaitingPhoneInput = false;
 let currentStatus = 'disconnected';
 let isAuthenticated = false;
 
+// Utility function to escape HTML
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
 // Terminal input handling with cursor support
 term.onData(data => {
     if (awaitingPhoneInput && isAuthenticated) {
@@ -433,8 +444,8 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName, buttonElement) {
-    // Check authentication for commands, rooms, and ai-settings tabs
-    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'ai-settings') && !isAuthenticated) {
+    // Check authentication for commands, rooms, contacts, and ai-settings tabs
+    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'contacts' || tabName === 'ai-settings') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
@@ -459,6 +470,8 @@ function switchTab(tabName, buttonElement) {
         loadCommands();
     } else if (tabName === 'rooms') {
         loadRooms();
+    } else if (tabName === 'contacts') {
+        loadContacts();
     } else if (tabName === 'ai-settings') {
         // Initialize first sub-tab as active
         document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -2241,7 +2254,7 @@ function restoreTabFromURL() {
 
     if (targetButton) {
         // Simulate tab click
-        if (mainTab === 'commands' || mainTab === 'rooms' || mainTab === 'ai-settings') {
+        if (mainTab === 'commands' || mainTab === 'rooms' || mainTab === 'contacts' || mainTab === 'ai-settings') {
             // Check auth first
             if (!isAuthenticated) {
                 console.log('[Tab Restore] Authentication required for', mainTab);
@@ -2261,6 +2274,8 @@ function restoreTabFromURL() {
             loadCommands();
         } else if (mainTab === 'rooms') {
             loadRooms();
+        } else if (mainTab === 'contacts') {
+            loadContacts();
         } else if (mainTab === 'ai-settings') {
             loadAIDefaults();
             loadApiConfig();
@@ -2923,5 +2938,159 @@ async function saveSystemPrompts() {
         }
     } catch (error) {
         await showAlert('Error', 'Error saving system prompts: ' + error.message);
+    }
+}
+
+// ============================================
+// Contacts Management
+// ============================================
+
+async function loadContacts() {
+    try {
+        const response = await fetch('/api/contacts', {
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            renderContacts(data.contacts);
+        } else {
+            document.getElementById('contactsTableBody').innerHTML = `
+                <tr>
+                    <td colspan="5" style="text-align: center; padding: 2rem; color: #f00;">
+                        Error: ${data.error}
+                    </td>
+                </tr>
+            `;
+        }
+    } catch (error) {
+        document.getElementById('contactsTableBody').innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 2rem; color: #f00;">
+                    Error loading contacts: ${error.message}
+                </td>
+            </tr>
+        `;
+    }
+}
+
+function renderContacts(contacts) {
+    const tbody = document.getElementById('contactsTableBody');
+
+    if (contacts.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" style="text-align: center; padding: 2rem; opacity: 0.5;">
+                    No contacts saved yet. Use "Add Contact" button or .contactadd command.
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = contacts.map(contact => {
+        const typeIcon = contact.type === 'user' ? '👤' : '👥';
+        const addedDate = new Date(contact.addedAt).toLocaleString();
+
+        return `
+            <tr>
+                <td style="padding: 0.5rem;">
+                    ${typeIcon} ${contact.type}
+                </td>
+                <td style="padding: 0.5rem;">
+                    ${escapeHtml(contact.name)}
+                </td>
+                <td style="padding: 0.5rem; font-size: 0.75rem; opacity: 0.7;">
+                    ${escapeHtml(contact.jid)}
+                </td>
+                <td style="padding: 0.5rem; font-size: 0.75rem; opacity: 0.7;">
+                    ${addedDate}
+                </td>
+                <td style="padding: 0.5rem; text-align: center;">
+                    <button class="btn btn-small danger" onclick="deleteContact('${escapeHtml(contact.jid)}')">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function showAddContactModal() {
+    const modal = document.getElementById('addContactModal');
+    document.getElementById('contactJid').value = '';
+    document.getElementById('contactName').value = '';
+    document.getElementById('contactType').value = 'user';
+    modal.showModal();
+}
+
+function closeAddContactModal() {
+    const modal = document.getElementById('addContactModal');
+    modal.close();
+}
+
+async function submitAddContact() {
+    const jid = document.getElementById('contactJid').value.trim();
+    const name = document.getElementById('contactName').value.trim();
+    const type = document.getElementById('contactType').value;
+
+    if (!jid || !name) {
+        await showAlert('Error', 'Please fill in all required fields');
+        return;
+    }
+
+    // Basic JID validation
+    if (!jid.includes('@')) {
+        await showAlert('Error', 'Invalid JID format. Must include @ (e.g., number@s.whatsapp.net)');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/contacts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'same-origin',
+            body: JSON.stringify({ jid, name, type })
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            await showAlert('Success', 'Contact added successfully');
+            closeAddContactModal();
+            await loadContacts(); // Reload list
+        } else {
+            await showAlert('Error', data.error || 'Failed to add contact');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error adding contact: ' + error.message);
+    }
+}
+
+async function deleteContact(jid) {
+    const confirmed = await showConfirm(
+        'Delete Contact',
+        `Are you sure you want to delete this contact?\n\n${jid}`
+    );
+
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/contacts/${encodeURIComponent(jid)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            await showAlert('Success', 'Contact deleted successfully');
+            await loadContacts(); // Reload list
+        } else {
+            await showAlert('Error', data.error || 'Failed to delete contact');
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error deleting contact: ' + error.message);
     }
 }
