@@ -845,6 +845,101 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         }
     }
 
+    // Check if any tool returned a document
+    let documentUrl = null;
+    let documentFilename = null;
+    let documentMimetype = null;
+    let documentCaption = null;
+
+    for (const msg of messages) {
+        if (msg.role === 'user' && Array.isArray(msg.content)) {
+            for (const item of msg.content) {
+                if (item.type === 'tool_result' && item.content) {
+                    try {
+                        const parsed = JSON.parse(item.content);
+                        if (parsed.document && parsed.fileName) {
+                            documentUrl = parsed.document;
+                            documentFilename = parsed.fileName;
+                            documentMimetype = parsed.mimetype || 'application/octet-stream';
+                            documentCaption = parsed.caption || null;
+                            break;
+                        }
+                    } catch (e) {
+                        // Not JSON or no document, skip
+                    }
+                }
+            }
+            if (documentUrl) break;
+        }
+    }
+
+    // If document found, send it
+    if (documentUrl) {
+        try {
+            console.log('[AI] Sending document:', documentUrl);
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            const documentOptions = {
+                document: { url: documentUrl },
+                fileName: documentFilename,
+                mimetype: documentMimetype
+            };
+
+            // Add caption if provided or use AI's response
+            if (documentCaption) {
+                documentOptions.caption = finalText + '\n\n' + documentCaption;
+            } else if (finalText && finalText.trim().length > 0) {
+                documentOptions.caption = finalText;
+            }
+
+            // Quote original user message
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+            await sock.sendMessage(roomJid, documentOptions, quotedOptions);
+
+            // Delete progress message if exists
+            if (progressMsg) {
+                try {
+                    await progressMsg.delete();
+                } catch (e) {
+                    console.error('[AI] Failed to delete progress message:', e.message);
+                }
+            }
+
+            // Save to memory after successful response
+            await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
+
+            // Return null to prevent wachan from sending again
+            return null;
+        } catch (error) {
+            console.error('[AI] Failed to send document:', error.message);
+
+            // Fallback to text
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            const textOptions = {
+                text: finalText + `\n\n_Document unavailable: ${error.message}_`
+            };
+
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+            await sock.sendMessage(roomJid, textOptions, quotedOptions);
+
+            // Delete progress message if exists
+            if (progressMsg) {
+                try {
+                    await progressMsg.delete();
+                } catch (e) {
+                    console.error('[AI] Failed to delete progress message:', e.message);
+                }
+            }
+
+            return null;
+        }
+    }
+
     // Send final text
     if (progressMsg) {
         // Send NEW message with final result (quoted to user)
