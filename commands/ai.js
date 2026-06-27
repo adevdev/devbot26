@@ -719,8 +719,24 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     console.log(`[AI] Final text extracted: ${finalText.substring(0, 100)}...`);
     console.log('[AI] Response content blocks:', JSON.stringify(response.content, null, 2));
 
-    // Check if image_search was used in this conversation
+    // Check if any tool returned images in this conversation
     let imageUrls = [];
+    let imageToolName = null;
+    let imageCaption = null;
+
+    // First pass: collect tool names from assistant's tool_use blocks
+    const toolsUsed = [];
+    for (const msg of messages) {
+        if (msg.role === 'assistant' && Array.isArray(msg.content)) {
+            for (const block of msg.content) {
+                if (block.type === 'tool_use') {
+                    toolsUsed.push(block.name);
+                }
+            }
+        }
+    }
+
+    // Second pass: collect images from tool results
     for (const msg of messages) {
         if (msg.role === 'user' && Array.isArray(msg.content)) {
             for (const item of msg.content) {
@@ -729,11 +745,26 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                         const parsed = JSON.parse(item.content);
                         if (parsed.images && Array.isArray(parsed.images)) {
                             imageUrls.push(...parsed.images);
+                            // Track custom caption if provided by tool
+                            if (parsed.caption) {
+                                imageCaption = parsed.caption;
+                            }
                         }
                     } catch (e) {
                         // Not JSON or no images, skip
                     }
                 }
+            }
+        }
+    }
+
+    // Identify which tool generated the images by checking resultType in metadata
+    if (imageUrls.length > 0 && toolsUsed.length > 0) {
+        for (const toolName of toolsUsed) {
+            const toolMetadata = tools.getMetadata(toolName);
+            if (toolMetadata && toolMetadata.resultType === 'image') {
+                imageToolName = toolName;
+                break; // Use first image tool found
             }
         }
     }
@@ -753,10 +784,21 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             const bot = require('wachan');
             const sock = bot.getSocket();
 
+            // Build caption based on tool and custom caption
+            let captionText = finalText;
+            if (imageCaption) {
+                // Tool provided custom caption, append it
+                captionText = finalText + '\n\n' + imageCaption;
+            } else if (imageToolName === 'image_search') {
+                // Image search - add Pinterest attribution
+                captionText = finalText + '\n\n_Image from Pinterest_';
+            }
+            // For other image tools (send_image, etc.), just use finalText
+
             const imageOptions = {
                 image: imageBuffer,
                 jpegThumbnail: thumbnail,
-                caption: finalText + `\n\n_Image from Pinterest_`
+                caption: captionText
             };
 
             // Quote original user message (baileys format: third parameter)
