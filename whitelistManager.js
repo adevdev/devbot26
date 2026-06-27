@@ -10,6 +10,7 @@ class WhitelistManager {
         this.initialized = false;
         this.lastSyncTime = 0;
         this.CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+        this.syncInProgress = false; // Prevent concurrent syncs
     }
 
     async initialize() {
@@ -127,6 +128,14 @@ class WhitelistManager {
             return;
         }
 
+        // Skip if sync already in progress to prevent race condition
+        if (this.syncInProgress) {
+            console.log('[Whitelist] Sync already in progress, skipping syncFromMongoDB');
+            return;
+        }
+
+        this.syncInProgress = true;
+
         try {
             const mongoClient = await storageHelper.getMongoClient();
             const db = mongoClient.db();
@@ -149,10 +158,13 @@ class WhitelistManager {
                     }
                 ]));
                 await this.saveToCache();
+                this.lastSyncTime = Date.now(); // Update sync time after successful sync
                 console.log(`Synced ${this.whitelist.size} whitelisted numbers from MongoDB`);
             }
         } catch (error) {
             console.error('Failed to sync from MongoDB:', error.message);
+        } finally {
+            this.syncInProgress = false;
         }
     }
 
@@ -164,6 +176,13 @@ class WhitelistManager {
             await this.saveToCache();
             return;
         }
+
+        // Wait if sync from MongoDB is in progress
+        while (this.syncInProgress) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+
+        this.syncInProgress = true;
 
         try {
             const mongoClient = await storageHelper.getMongoClient();
@@ -194,9 +213,15 @@ class WhitelistManager {
             );
 
             await this.saveToCache();
+
+            // Update lastSyncTime to prevent race condition with syncFromMongoDB
+            this.lastSyncTime = Date.now();
+
         } catch (error) {
             console.error('Failed to sync to MongoDB:', error.message);
             throw error;
+        } finally {
+            this.syncInProgress = false;
         }
     }
 
