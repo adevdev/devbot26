@@ -661,7 +661,7 @@ async function loadAIDefaults() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, defaultEnabledTools } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, maxToolIterations, defaultEnabledTools } = data.defaults;
 
             // Store default model ID globally for use in other functions
             window.defaultModelId = defaultModel;
@@ -701,6 +701,7 @@ async function loadAIDefaults() {
             document.getElementById('defaultQuota').textContent = defaultQuota + ' requests';
             document.getElementById('defaultReset').textContent = resetDisplay;
             document.getElementById('defaultVisionModel').textContent = visionDisplay;
+            document.getElementById('maxToolIterations').textContent = (maxToolIterations || 10) + ' iterations';
             document.getElementById('defaultEnabledTools').innerHTML = toolsDisplay;
             document.getElementById('aiIdentityDisplay').textContent = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
 
@@ -782,7 +783,7 @@ async function showEditDefaultsModal() {
         const data = await response.json();
 
         if (data.success) {
-            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, aiIdentity, defaultEnabledTools } = data.defaults;
+            const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, aiIdentity, maxToolIterations, defaultEnabledTools } = data.defaults;
 
             // Populate model dropdowns dynamically
             await populateModelDropdown('editDefaultModel', { selectedValue: defaultModel });
@@ -794,6 +795,7 @@ async function showEditDefaultsModal() {
             document.getElementById('editDefaultQuota').value = defaultQuota;
             document.getElementById('editDefaultResetPeriod').value = defaultResetPeriod;
             document.getElementById('editAiIdentity').value = aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.';
+            document.getElementById('editMaxToolIterations').value = maxToolIterations || 10;
 
             // Load and populate tools
             const enabledTools = defaultEnabledTools || [];
@@ -1524,10 +1526,11 @@ function renderWhitelist(users) {
         const usageCount = typeof user === 'object' && user.usageCount ? user.usageCount : 0;
         const resetPeriod = typeof user === 'object' && user.resetPeriod ? user.resetPeriod : 'perDay';
         const enabledTools = typeof user === 'object' && user.enabledTools ? user.enabledTools : [];
+        const maxToolIterations = typeof user === 'object' && user.maxToolIterations !== undefined ? user.maxToolIterations : null;
 
         // Store in global array for easy access
         if (!window.whitelistUserData) window.whitelistUserData = {};
-        window.whitelistUserData[number] = { enabledTools, model, quota, resetPeriod, usageCount, pushName };
+        window.whitelistUserData[number] = { enabledTools, model, quota, resetPeriod, usageCount, pushName, maxToolIterations };
 
         // Extract JID number (before @ symbol)
         const jidNumber = jid.split('@')[0];
@@ -1588,10 +1591,10 @@ function renderWhitelist(users) {
 // Wrapper function to get enabledTools from global storage
 async function showEditWhitelistModalFromNumber(encodedNumber, encodedModel, encodedPushName, quota, resetPeriod, usageCount) {
     const number = decodeURIComponent(encodedNumber);
-    const enabledTools = window.whitelistUserData && window.whitelistUserData[number]
-        ? window.whitelistUserData[number].enabledTools
-        : [];
-    await showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName, quota, resetPeriod, usageCount, enabledTools);
+    const userData = window.whitelistUserData && window.whitelistUserData[number];
+    const enabledTools = userData ? userData.enabledTools : [];
+    const maxToolIterations = userData ? userData.maxToolIterations : null;
+    await showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName, quota, resetPeriod, usageCount, enabledTools, maxToolIterations);
 }
 
 // Render whitelist error
@@ -2051,7 +2054,7 @@ async function showAddWhitelistModal() {
 }
 
 // Show edit whitelist modal
-async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay', usageCount = 0, enabledTools = []) {
+async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushName = '', quota = 100, resetPeriod = 'perDay', usageCount = 0, enabledTools = [], maxToolIterations = null) {
     const number = decodeURIComponent(encodedNumber);
     const model = decodeURIComponent(encodedModel);
     const pushName = encodedPushName ? decodeURIComponent(encodedPushName) : '';
@@ -2062,6 +2065,7 @@ async function showEditWhitelistModal(encodedNumber, encodedModel, encodedPushNa
     document.getElementById('editWhitelistQuota').value = quota;
     document.getElementById('editWhitelistUsage').value = usageCount;
     document.getElementById('editWhitelistResetPeriod').value = resetPeriod;
+    document.getElementById('editWhitelistMaxToolIterations').value = maxToolIterations !== null ? maxToolIterations : '';
 
     // Populate model dropdown dynamically
     await populateModelDropdown('editWhitelistModel', { selectedValue: model });
@@ -2346,6 +2350,8 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
     const model = document.getElementById('whitelistModel').value;
     const quota = parseInt(document.getElementById('whitelistQuota').value);
     const resetPeriod = document.getElementById('whitelistResetPeriod').value;
+    const maxToolIterationsValue = document.getElementById('whitelistMaxToolIterations').value.trim();
+    const maxToolIterations = maxToolIterationsValue ? parseInt(maxToolIterationsValue) : null;
 
     if (!number) {
         await showAlert('Error', 'Phone number is required');
@@ -2364,6 +2370,12 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
         return;
     }
 
+    // Validate maxToolIterations if provided
+    if (maxToolIterations !== null && (isNaN(maxToolIterations) || maxToolIterations < 1 || maxToolIterations > 50)) {
+        await showAlert('Error', 'Max Tool Iterations must be between 1 and 50, or empty for default');
+        return;
+    }
+
     try {
         const response = await fetch('/api/whitelist', {
             method: 'POST',
@@ -2374,7 +2386,8 @@ document.getElementById('addWhitelistSubmit').addEventListener('click', async ()
                 model,
                 pushName: pushName || null,
                 quota,
-                resetPeriod
+                resetPeriod,
+                maxToolIterations
             })
         });
 
@@ -2406,6 +2419,8 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
     const quota = parseInt(document.getElementById('editWhitelistQuota').value);
     const usageCount = parseInt(document.getElementById('editWhitelistUsage').value);
     const resetPeriod = document.getElementById('editWhitelistResetPeriod').value;
+    const maxToolIterationsValue = document.getElementById('editWhitelistMaxToolIterations').value.trim();
+    const maxToolIterations = maxToolIterationsValue ? parseInt(maxToolIterationsValue) : null;
 
     // Collect enabled tools from checkboxes
     const enabledToolsCheckboxes = document.querySelectorAll('input[name="enabledTool"]:checked');
@@ -2434,6 +2449,12 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
         return;
     }
 
+    // Validate maxToolIterations if provided
+    if (maxToolIterations !== null && (isNaN(maxToolIterations) || maxToolIterations < 1 || maxToolIterations > 50)) {
+        await showAlert('Error', 'Max Tool Iterations must be between 1 and 50, or empty for default');
+        return;
+    }
+
     try {
         const response = await fetch(`/api/whitelist/${encodeURIComponent(oldNumber)}`, {
             method: 'PUT',
@@ -2446,7 +2467,8 @@ document.getElementById('editWhitelistSubmit').addEventListener('click', async (
                 quota,
                 usageCount,
                 resetPeriod,
-                enabledTools
+                enabledTools,
+                maxToolIterations
             })
         });
 
@@ -2475,6 +2497,7 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
     const defaultResetPeriod = document.getElementById('editDefaultResetPeriod').value;
     const defaultVisionModel = document.getElementById('editDefaultVisionModel').value;
     const aiIdentity = document.getElementById('editAiIdentity').value.trim();
+    const maxToolIterations = parseInt(document.getElementById('editMaxToolIterations').value);
 
     // Collect enabled tools from checkboxes
     const enabledToolsCheckboxes = document.querySelectorAll('input[name="defaultEnabledTool"]:checked');
@@ -2483,6 +2506,12 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
     // Validate quota
     if (isNaN(defaultQuota) || defaultQuota < 1 || defaultQuota > 10000) {
         await showAlert('Error', 'Quota must be between 1 and 10000');
+        return;
+    }
+
+    // Validate maxToolIterations
+    if (isNaN(maxToolIterations) || maxToolIterations < 1 || maxToolIterations > 50) {
+        await showAlert('Error', 'Max Tool Iterations must be between 1 and 50');
         return;
     }
 
@@ -2503,6 +2532,7 @@ document.getElementById('editDefaultsSubmit').addEventListener('click', async ()
                 defaultResetPeriod,
                 defaultVisionModel,
                 aiIdentity,
+                maxToolIterations,
                 defaultEnabledTools
             })
         });

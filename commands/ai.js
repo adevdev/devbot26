@@ -451,7 +451,12 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     }
 
     let iterations = 0;
-    const MAX_ITERATIONS = 10;
+    // Get user-specific maxToolIterations, or use global default
+    let maxIterations = await whitelistManager.getMaxToolIterations(workingIdentifier);
+    if (maxIterations === null) {
+        maxIterations = await settingsManager.getMaxToolIterations();
+    }
+    const MAX_ITERATIONS = maxIterations;
     let progressMsg = null;
 
     while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {

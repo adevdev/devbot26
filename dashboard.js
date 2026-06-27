@@ -697,7 +697,7 @@ class BotDashboard {
         // API: Add number to whitelist
         this.app.post('/api/whitelist', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { number, model, pushName, quota, resetPeriod } = req.body;
+                const { number, model, pushName, quota, resetPeriod, maxToolIterations } = req.body;
 
                 if (!number || typeof number !== 'string') {
                     return res.status(400).json({ success: false, error: 'Valid phone number is required' });
@@ -733,8 +733,16 @@ class BotDashboard {
                 const validResetPeriods = ['per5Hours', 'perDay', 'perMonth'];
                 const selectedResetPeriod = resetPeriod && validResetPeriods.includes(resetPeriod) ? resetPeriod : 'perDay';
 
+                // Validate maxToolIterations (null or 1-50)
+                let selectedMaxToolIterations = null;
+                if (maxToolIterations !== null && maxToolIterations !== undefined) {
+                    if (typeof maxToolIterations === 'number' && maxToolIterations >= 1 && maxToolIterations <= 50) {
+                        selectedMaxToolIterations = maxToolIterations;
+                    }
+                }
+
                 const whitelistManager = require('./whitelistManager');
-                const normalized = await whitelistManager.addNumber(sanitized, selectedModel, sanitizedPushName, selectedQuota, selectedResetPeriod);
+                const normalized = await whitelistManager.addNumber(sanitized, selectedModel, sanitizedPushName, selectedQuota, selectedResetPeriod, selectedMaxToolIterations);
 
                 const logName = sanitizedPushName ? ` (${sanitizedPushName})` : '';
                 const resetLabel = selectedResetPeriod === 'per5Hours' ? '5h' : selectedResetPeriod === 'perDay' ? 'day' : 'month';
@@ -746,7 +754,8 @@ class BotDashboard {
                     model: selectedModel,
                     pushName: sanitizedPushName,
                     quota: selectedQuota,
-                    resetPeriod: selectedResetPeriod
+                    resetPeriod: selectedResetPeriod,
+                    maxToolIterations: selectedMaxToolIterations
                 });
             } catch (error) {
                 this.addLog('error', `Failed to add to whitelist: ${error.message}`);
@@ -758,7 +767,7 @@ class BotDashboard {
         this.app.put('/api/whitelist/:number', this.requireAuth.bind(this), async (req, res) => {
             try {
                 const { number } = req.params;
-                const { model, newNumber, pushName, quota, usageCount, resetPeriod, enabledTools } = req.body;
+                const { model, newNumber, pushName, quota, usageCount, resetPeriod, enabledTools, maxToolIterations } = req.body;
 
                 // Validate model dynamically from settings
                 const settingsManager = require('./settingsManager');
@@ -799,6 +808,14 @@ class BotDashboard {
                 // Validate enabledTools (should be array of tool names)
                 const selectedEnabledTools = Array.isArray(enabledTools) ? enabledTools : [];
 
+                // Validate maxToolIterations (null or 1-50)
+                let selectedMaxToolIterations = null;
+                if (maxToolIterations !== null && maxToolIterations !== undefined) {
+                    if (typeof maxToolIterations === 'number' && maxToolIterations >= 1 && maxToolIterations <= 50) {
+                        selectedMaxToolIterations = maxToolIterations;
+                    }
+                }
+
                 // If number is being changed
                 if (newNumber && newNumber !== decodedOldNumber) {
                     // Validate new number format
@@ -811,7 +828,7 @@ class BotDashboard {
                     await whitelistManager.removeNumber(decodedOldNumber);
 
                     // Add new number with all settings
-                    const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
+                    const normalized = await whitelistManager.addNumber(sanitized, model, sanitizedPushName, selectedQuota, selectedResetPeriod, selectedMaxToolIterations);
 
                     // Update usage count if provided
                     if (selectedUsageCount > 0) {
@@ -833,11 +850,12 @@ class BotDashboard {
                         quota: selectedQuota,
                         usageCount: selectedUsageCount,
                         resetPeriod: selectedResetPeriod,
-                        enabledTools: selectedEnabledTools
+                        enabledTools: selectedEnabledTools,
+                        maxToolIterations: selectedMaxToolIterations
                     });
                 } else {
                     // Just update settings for same number
-                    await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName, selectedQuota, selectedResetPeriod);
+                    await whitelistManager.addNumber(decodedOldNumber, model, sanitizedPushName, selectedQuota, selectedResetPeriod, selectedMaxToolIterations);
 
                     // Update usage count
                     await whitelistManager.setUsageCount(decodedOldNumber, selectedUsageCount);
@@ -857,7 +875,8 @@ class BotDashboard {
                         quota: selectedQuota,
                         usageCount: selectedUsageCount,
                         resetPeriod: selectedResetPeriod,
-                        enabledTools: selectedEnabledTools
+                        enabledTools: selectedEnabledTools,
+                        maxToolIterations: selectedMaxToolIterations
                     });
                 }
             } catch (error) {
@@ -986,7 +1005,8 @@ class BotDashboard {
                         defaultEnabledTools: defaults.defaultEnabledTools || [],
                         whitelistMode: defaults.whitelistMode || 'strict',
                         aiIdentity: defaults.aiIdentity || 'You are DevBot26, an AI assistant responding via WhatsApp.',
-                        maxMemoryMessages: defaults.maxMemoryMessages || 100
+                        maxMemoryMessages: defaults.maxMemoryMessages || 100,
+                        maxToolIterations: defaults.maxToolIterations || 10
                     }
                 });
             } catch (error) {
@@ -998,7 +1018,7 @@ class BotDashboard {
         // API: Update AI default settings
         this.app.put('/api/ai-settings/defaults', this.requireAuth.bind(this), async (req, res) => {
             try {
-                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, defaultEnabledTools } = req.body;
+                const { defaultModel, defaultQuota, defaultResetPeriod, defaultVisionModel, whitelistMode, aiIdentity, maxMemoryMessages, maxToolIterations, defaultEnabledTools } = req.body;
 
                 const settingsManager = require('./settingsManager');
 
@@ -1032,6 +1052,7 @@ class BotDashboard {
                     whitelistMode,
                     aiIdentity,
                     maxMemoryMessages,
+                    maxToolIterations,
                     defaultEnabledTools: validatedEnabledTools
                 });
 
@@ -1055,6 +1076,9 @@ class BotDashboard {
                 if (maxMemoryMessages) {
                     logMessage += `, max memory: ${maxMemoryMessages}`;
                 }
+                if (maxToolIterations) {
+                    logMessage += `, max tool iterations: ${maxToolIterations}`;
+                }
 
                 this.addLog('success', logMessage);
                 res.json({
@@ -1067,7 +1091,8 @@ class BotDashboard {
                         defaultVisionModel,
                         whitelistMode,
                         aiIdentity,
-                        maxMemoryMessages
+                        maxMemoryMessages,
+                        maxToolIterations
                     }
                 });
             } catch (error) {

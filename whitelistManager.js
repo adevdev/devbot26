@@ -63,7 +63,8 @@ class WhitelistManager {
                             usageCount: u.usageCount || 0,
                             resetPeriod: u.resetPeriod || 'perDay',
                             lastReset: u.lastReset || Date.now(),
-                            enabledTools: u.enabledTools || [] // Empty = all tools enabled
+                            enabledTools: u.enabledTools || [], // Empty = all tools enabled
+                            maxToolIterations: u.maxToolIterations || null // null = use default
                         }
                     ]));
                 } else if (data.numbers && Array.isArray(data.numbers)) {
@@ -78,7 +79,8 @@ class WhitelistManager {
                             usageCount: 0,
                             resetPeriod: 'perDay',
                             lastReset: Date.now(),
-                            enabledTools: [] // Empty = all tools enabled
+                            enabledTools: [], // Empty = all tools enabled
+                            maxToolIterations: null // null = use default
                         }
                     ]));
                 }
@@ -225,7 +227,7 @@ class WhitelistManager {
         }
     }
 
-    async addNumber(number, model = null, pushName = null, quota = null, resetPeriod = null) {
+    async addNumber(number, model = null, pushName = null, quota = null, resetPeriod = null, maxToolIterations = null) {
         await this.initialize();
 
         // Normalize format: ensure @s.whatsapp.net suffix
@@ -244,6 +246,9 @@ class WhitelistManager {
         if (resetPeriod === null) {
             resetPeriod = existingInfo?.resetPeriod || await settingsManager.getDefaultResetPeriod();
         }
+        if (maxToolIterations === null) {
+            maxToolIterations = existingInfo?.maxToolIterations || null; // null = use default
+        }
 
         // Preserve existing fields when updating
         const usageCount = existingInfo?.usageCount || 0;
@@ -258,7 +263,8 @@ class WhitelistManager {
             usageCount,
             resetPeriod,
             lastReset,
-            enabledTools: enabledTools || []
+            enabledTools: enabledTools || [],
+            maxToolIterations: maxToolIterations
         });
         await this.syncToMongoDB();
 
@@ -331,6 +337,25 @@ class WhitelistManager {
         return info.enabledTools || [];
     }
 
+    async getMaxToolIterations(number) {
+        await this.initialize();
+
+        const normalized = number.includes('@') ? number : `${number}@s.whatsapp.net`;
+        const info = this.whitelist.get(normalized);
+
+        if (!info) {
+            return null; // Not whitelisted, return null (use global default)
+        }
+
+        // Support both old string format and new object format
+        if (typeof info === 'string') {
+            return null; // Legacy format, use global default
+        }
+
+        // Return user's maxToolIterations (null = use global default)
+        return info.maxToolIterations || null;
+    }
+
     async getAll() {
         await this.initialize();
         return Array.from(this.whitelist.entries()).map(([number, info]) => {
@@ -345,7 +370,8 @@ class WhitelistManager {
                     usageCount: 0,
                     resetPeriod: 'perDay',
                     lastReset: Date.now(),
-                    enabledTools: [] // Empty = all tools enabled
+                    enabledTools: [], // Empty = all tools enabled
+                    maxToolIterations: null // null = use default
                 };
             }
             return {
@@ -357,7 +383,8 @@ class WhitelistManager {
                 usageCount: info.usageCount || 0,
                 resetPeriod: info.resetPeriod || 'perDay',
                 lastReset: info.lastReset || Date.now(),
-                enabledTools: info.enabledTools || [] // Empty = all tools enabled
+                enabledTools: info.enabledTools || [], // Empty = all tools enabled
+                maxToolIterations: info.maxToolIterations || null // null = use default
             };
         });
     }

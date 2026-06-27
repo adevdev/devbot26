@@ -25,6 +25,7 @@ class SettingsManager {
             aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality
             maxMemoryMessages: 100, // Max messages stored per chat for AI context
             apiTimeout: 120000, // API request timeout in milliseconds (120s default)
+            maxToolIterations: 10, // Max tool use iterations per AI request (prevent infinite loops)
             supportedModels: [], // User must add models via UI
             // Provider configurations (API paths, versions, etc.)
             providerConfigs: {
@@ -232,6 +233,18 @@ class SettingsManager {
         this.settings.maxMemoryMessages = maxMessages;
         await this.save();
         console.log('[AI Settings] Updated max memory messages:', maxMessages);
+    }
+
+    async getMaxToolIterations() {
+        await this.initialize();
+        return this.settings.maxToolIterations || this.defaultSettings.maxToolIterations;
+    }
+
+    async setMaxToolIterations(maxIterations) {
+        await this.initialize();
+        this.settings.maxToolIterations = maxIterations;
+        await this.save();
+        console.log('[AI Settings] Updated max tool iterations:', maxIterations);
     }
 
     async getApiEndpoint() {
