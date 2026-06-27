@@ -127,12 +127,13 @@ module.exports = {
 
             await message.react("✅");
 
-            // Send audio directly via socket
+            // Send audio directly via socket (as regular audio, not PTT)
+            // MP3 format works for regular audio on both Web and Android
             const sock = bot.getSocket();
             await sock.sendMessage(message.room, {
                 audio: { url: audioUrl },
-                mimetype: 'audio/mp4',
-                ptt: true
+                mimetype: 'audio/mpeg'
+                // Removed ptt: true - send as regular audio file
             }, {
                 quoted: message.toBaileys()
             });
