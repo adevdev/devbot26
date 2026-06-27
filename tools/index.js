@@ -11,9 +11,9 @@ const temporaryToolsManager = require('../temporaryToolsManager');
 const staticTools = {};
 const toolSources = {}; // Track which file each tool came from
 
-// Scan directory and load all .js files (except index.js)
+// Scan directory and load all .js files (except index.js, definitions.js, and TEMPLATE.js)
 const toolFiles = fs.readdirSync(__dirname)
-    .filter(file => file !== 'index.js' && file !== 'definitions.js' && file.endsWith('.js'));
+    .filter(file => file !== 'index.js' && file !== 'definitions.js' && file !== 'TEMPLATE.js' && file.endsWith('.js'));
 
 for (const file of toolFiles) {
     try {

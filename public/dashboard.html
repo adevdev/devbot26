@@ -58,6 +58,7 @@
             display: flex;
             gap: 0.5rem;
             margin-top: 0.5rem;
+            flex-wrap: wrap;
         }
 
         .tabs.hidden {
@@ -74,6 +75,8 @@
             font-size: 0.9rem;
             transition: all 0.2s;
             opacity: 0.6;
+            white-space: nowrap;
+            flex-shrink: 0;
         }
 
         .tab-btn:hover {
@@ -269,6 +272,28 @@
             resize: vertical;
         }
 
+        /* Hide number input spinners for clean terminal look */
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+
+        input[type="number"] {
+            -moz-appearance: textfield;
+            appearance: textfield;
+        }
+
+        /* Fix autofill background for all inputs */
+        input:-webkit-autofill,
+        input:-webkit-autofill:hover,
+        input:-webkit-autofill:focus,
+        input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 30px #000 inset !important;
+            -webkit-text-fill-color: #0f0 !important;
+            caret-color: #0f0 !important;
+        }
+
         /* Modal styles */
         dialog {
             position: fixed;
@@ -322,6 +347,13 @@
         }
 
         /* Mobile responsive */
+        /* Table wrapper for horizontal scroll on mobile */
+        .table-wrapper {
+            width: 100%;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+
         @media (max-width: 768px) {
             .header {
                 flex-direction: column;
@@ -336,12 +368,16 @@
             .tabs {
                 width: 100%;
                 margin-top: 0.25rem;
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
             }
 
             .tab-btn {
-                flex: 1;
-                padding: 0.4rem 0.5rem;
+                flex: 0 0 auto;
+                padding: 0.5rem 1rem;
                 font-size: 0.8rem;
+                white-space: nowrap;
             }
 
             .controls {
@@ -353,7 +389,8 @@
                 flex: 1;
                 min-width: auto;
                 font-size: 0.8rem;
-                padding: 0.4rem 0.5rem;
+                padding: 0.5rem 0.75rem;
+                min-height: 44px; /* Touch-friendly */
             }
 
             .terminal-container {
@@ -361,18 +398,95 @@
                 padding-bottom: 3rem;
             }
 
-            .commands-container {
+            .commands-container,
+            .rooms-container,
+            .contacts-container {
                 padding: 0.5rem;
                 padding-bottom: 3rem;
             }
 
-            .commands-table {
+            /* Make tables scrollable horizontally */
+            .commands-table,
+            .rooms-table,
+            #contactsTable {
                 font-size: 0.75rem;
+                display: block;
+                overflow-x: auto;
+                white-space: nowrap;
             }
 
             .commands-table th,
-            .commands-table td {
-                padding: 0.3rem;
+            .commands-table td,
+            .rooms-table th,
+            .rooms-table td,
+            #contactsTable th,
+            #contactsTable td {
+                padding: 0.4rem;
+                white-space: nowrap;
+                min-width: 80px;
+            }
+
+            /* Specific column widths for whitelist table */
+            .commands-table th:nth-child(1),
+            .commands-table td:nth-child(1) {
+                min-width: 40px;
+                max-width: 40px;
+            }
+
+            .commands-table th:nth-child(2),
+            .commands-table td:nth-child(2) {
+                min-width: 120px;
+            }
+
+            .commands-table th:nth-child(3),
+            .commands-table td:nth-child(3) {
+                min-width: 100px;
+            }
+
+            .commands-table th:nth-child(4),
+            .commands-table td:nth-child(4) {
+                min-width: 150px;
+            }
+
+            .commands-table th:nth-child(5),
+            .commands-table td:nth-child(5) {
+                min-width: 100px;
+            }
+
+            .commands-table th:nth-child(6),
+            .commands-table td:nth-child(6) {
+                min-width: 100px;
+            }
+
+            .commands-table th:nth-child(7),
+            .commands-table td:nth-child(7) {
+                min-width: 80px;
+            }
+
+            .commands-table th:nth-child(8),
+            .commands-table td:nth-child(8) {
+                min-width: 120px;
+            }
+
+            /* AI Settings subtabs scroll */
+            .ai-subtab-buttons {
+                overflow-x: auto;
+                flex-wrap: nowrap;
+                -webkit-overflow-scrolling: touch;
+            }
+
+            .ai-subtab-buttons .tab-btn {
+                flex: 0 0 auto;
+                white-space: nowrap;
+            }
+
+            /* Break long text in table cells */
+            .commands-table td,
+            .rooms-table td,
+            #contactsTable td {
+                word-break: break-word;
+                white-space: normal;
+                max-width: 200px;
             }
 
             dialog {
@@ -386,31 +500,75 @@
 
             .modal-buttons {
                 flex-direction: column;
+                gap: 0.5rem;
             }
 
             .modal-buttons .btn {
                 width: 100%;
+                min-height: 44px;
+            }
+
+            /* Input groups */
+            .input-group label {
+                font-size: 0.85rem;
+            }
+
+            .input-group input,
+            .input-group textarea,
+            .input-group select {
+                font-size: 0.9rem;
+                padding: 0.6rem;
+                min-height: 44px;
             }
         }
 
         @media (max-width: 480px) {
             .header h1 {
-                font-size: 0.9rem;
+                font-size: 0.85rem;
                 letter-spacing: 1px;
             }
 
+            .header h1 img {
+                height: 1.5rem;
+            }
+
             .tab-btn {
-                font-size: 0.75rem;
-                padding: 0.3rem 0.4rem;
+                font-size: 0.7rem;
+                padding: 0.4rem 0.75rem;
             }
 
             .btn {
                 font-size: 0.75rem;
-                padding: 0.3rem 0.4rem;
+                padding: 0.4rem 0.6rem;
+                min-height: 40px;
             }
 
-            .commands-table {
-                font-size: 0.7rem;
+            .commands-table,
+            .rooms-table,
+            #contactsTable {
+                font-size: 0.65rem;
+            }
+
+            .commands-table th,
+            .commands-table td,
+            .rooms-table th,
+            .rooms-table td,
+            #contactsTable th,
+            #contactsTable td {
+                padding: 0.3rem;
+                font-size: 0.65rem;
+            }
+
+            /* Reduce min-widths slightly on very small screens */
+            .commands-table th,
+            .commands-table td {
+                min-width: 70px;
+            }
+
+            .commands-table th:nth-child(1),
+            .commands-table td:nth-child(1) {
+                min-width: 35px;
+                max-width: 35px;
             }
 
             .commands-header {
@@ -420,6 +578,44 @@
             }
 
             .commands-header button {
+                width: 100%;
+                min-height: 44px;
+            }
+
+            .modal-content {
+                padding: 12px;
+            }
+
+            .modal-title {
+                font-size: 16px;
+            }
+
+            .input-group input,
+            .input-group textarea,
+            .input-group select {
+                font-size: 0.85rem;
+            }
+
+            /* Smaller terminal padding on very small screens */
+            .terminal-container {
+                padding: 0.25rem;
+                padding-bottom: 2rem;
+            }
+
+            .commands-container,
+            .rooms-container,
+            .contacts-container {
+                padding: 0.25rem;
+                padding-bottom: 2rem;
+            }
+
+            /* Batch operations toolbar stack vertically */
+            #batchOpsToolbar > div {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            #batchOpsToolbar .btn {
                 width: 100%;
             }
         }
@@ -550,14 +746,14 @@
             </div>
 
             <!-- Sub-tabs for AI Settings -->
-            <div style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #0f0; padding-bottom: 0.5rem;">
-                <button class="tab-btn active" onclick="switchAiSubTab('defaults', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Defaults</button>
-                <button class="tab-btn" onclick="switchAiSubTab('api', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">API Config</button>
-                <button class="tab-btn" onclick="switchAiSubTab('models', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Models</button>
-                <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Memory</button>
-                <button class="tab-btn" onclick="switchAiSubTab('whitelist', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Whitelist</button>
-                <button class="tab-btn" onclick="switchAiSubTab('tools', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">Tools</button>
-                <button class="tab-btn" onclick="switchAiSubTab('prompts', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace;">System Prompts</button>
+            <div class="ai-subtab-buttons" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #0f0; padding-bottom: 0.5rem; overflow-x: auto; -webkit-overflow-scrolling: touch;">
+                <button class="tab-btn active" onclick="switchAiSubTab('defaults', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Defaults</button>
+                <button class="tab-btn" onclick="switchAiSubTab('api', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">API Config</button>
+                <button class="tab-btn" onclick="switchAiSubTab('models', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Models</button>
+                <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Memory</button>
+                <button class="tab-btn" onclick="switchAiSubTab('whitelist', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Whitelist</button>
+                <button class="tab-btn" onclick="switchAiSubTab('tools', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Tools</button>
+                <button class="tab-btn" onclick="switchAiSubTab('prompts', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">System Prompts</button>
             </div>
 
             <!-- Defaults Sub-tab -->
