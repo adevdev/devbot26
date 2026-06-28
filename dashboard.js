@@ -23,6 +23,7 @@ class BotDashboard {
         this.startBotCallback = null;
         this.stopBotCallback = null;
         this.commandsModule = null; // Reference to wachan/commands module
+        this.activeWaitSessions = new Set(); // Track active wait-for-reply sessions
 
         // Load auth credentials from environment variables
         this.authUsername = process.env.DASHBOARD_USERNAME || 'admin';
@@ -1613,12 +1614,17 @@ class BotDashboard {
             let timeoutHandle;
             let receiver;
 
+            // Register this sender as having an active wait session
+            this.activeWaitSessions.add(sender);
+
             // Cleanup function
             const cleanup = () => {
                 if (timeoutHandle) clearTimeout(timeoutHandle);
                 if (receiver && typeof receiver.remove === 'function') {
                     receiver.remove();
                 }
+                // Remove from active sessions
+                this.activeWaitSessions.delete(sender);
             };
 
             // Set timeout
@@ -1645,6 +1651,11 @@ class BotDashboard {
                 next(); // Pass to other handlers
             });
         });
+    }
+
+    // Check if sender has an active wait-for-reply session
+    hasActiveWaitSession(sender) {
+        return this.activeWaitSessions.has(sender);
     }
     
     start(port = 3000) {

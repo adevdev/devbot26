@@ -346,6 +346,14 @@ wachan.onReceive(wachan.messageType.any, async (context, next) => {
         return;
     }
 
+    // Check if this sender has an active wait-for-reply session
+    const senderId = message.sender?.id || message.from;
+    if (dashboard.hasActiveWaitSession(senderId)) {
+        // Let wait-for-reply handler receive this message
+        next();
+        return;
+    }
+
     // Private message without prefix -> route to AI
     try {
         const aiCommandModule = require('./commands/ai.js');
