@@ -18,6 +18,31 @@ let healthCheckInterval = null;
 let isReconnecting = false;
 let isIntentionalShutdown = false;
 
+// Message deduplication cache
+const messageCache = new Map(); // Map<messageId, expiryTimestamp>
+const MESSAGE_CACHE_TTL = 60000; // 60 seconds
+const MESSAGE_CACHE_CLEANUP_INTERVAL = 60000; // Cleanup every 60 seconds
+
+// Cleanup expired messages from cache
+function cleanupMessageCache() {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [messageId, expiryTime] of messageCache.entries()) {
+        if (now > expiryTime) {
+            messageCache.delete(messageId);
+            cleaned++;
+        }
+    }
+
+    if (cleaned > 0) {
+        console.log(`[Cache] Cleaned ${cleaned} expired message(s), current size: ${messageCache.size}`);
+    }
+}
+
+// Start cleanup interval
+setInterval(cleanupMessageCache, MESSAGE_CACHE_CLEANUP_INTERVAL);
+
 // Intercept console.log to pipe to dashboard (with strict filtering)
 const originalConsoleLog = console.log.bind(console);
 
@@ -724,6 +749,22 @@ async function syncCredsFromStorage() {
 // Log all incoming messages
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
+
+    // Deduplication check - prevent processing duplicate messages
+    const messageId = message.key?.id;
+    if (messageId) {
+        const now = Date.now();
+        const cachedExpiry = messageCache.get(messageId);
+
+        // Check if message already processed and not expired
+        if (cachedExpiry && now < cachedExpiry) {
+            console.log(`[Dedupe] Skipped duplicate message: ${messageId}`);
+            return; // Skip processing - don't call next()
+        }
+
+        // Add to cache with expiry timestamp
+        messageCache.set(messageId, now + MESSAGE_CACHE_TTL);
+    }
 
     // Update activity timestamp
     lastActivity = Date.now();
