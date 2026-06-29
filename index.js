@@ -809,6 +809,10 @@ wachan.onReady(async () => {
     // Sync whitelist from MongoDB on startup
     const whitelistManager = require('./whitelistManager');
     await whitelistManager.syncFromMongoDB();
+
+    // Start task scheduler
+    const taskScheduler = require('./taskScheduler');
+    await taskScheduler.start();
 });
 
 // Event: connected
@@ -875,6 +879,26 @@ wachan.onConnected(async () => {
         botSocket.ev.on('messages.upsert', () => {
             lastActivity = Date.now();
         });
+
+        // Handle session errors (suppress verbose "Closing session" logs)
+        // These are normal during session rotation and don't need detailed logging
+        const originalConsoleError = console.error;
+        console.error = function(...args) {
+            const message = args.join(' ');
+
+            // Suppress verbose session closing logs (these are normal)
+            if (message.includes('Closing open session') ||
+                message.includes('Closing session: SessionEntry')) {
+                // Log simplified version instead
+                if (message.includes('Closing open session')) {
+                    console.log('[Session] Rotating session (normal behavior)');
+                }
+                return; // Skip the verbose output
+            }
+
+            // Pass through other errors normally
+            originalConsoleError.apply(console, args);
+        };
     }
 
     // Wrap sendMessage to auto-inject 1 year ephemeral and track sent messages
@@ -990,7 +1014,13 @@ async function initBot() {
                 keepAliveIntervalMs: 25000,
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false
+                markOnlineOnConnect: false,
+                // Session & message retry config (fail fast)
+                retryRequestDelayMs: 10,
+                maxMsgRetryCount: 1,
+                // Auto-handle session errors gracefully
+                emitOwnEvents: false,
+                shouldIgnoreJid: () => false
             }
         });
     } else {
@@ -1006,7 +1036,13 @@ async function initBot() {
                 keepAliveIntervalMs: 25000,
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
-                markOnlineOnConnect: false
+                markOnlineOnConnect: false,
+                // Session & message retry config (fail fast)
+                retryRequestDelayMs: 10,
+                maxMsgRetryCount: 1,
+                // Auto-handle session errors gracefully
+                emitOwnEvents: false,
+                shouldIgnoreJid: () => false
             }
         });
     }

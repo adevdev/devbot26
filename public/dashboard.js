@@ -444,8 +444,8 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName, buttonElement) {
-    // Check authentication for commands, rooms, contacts, and ai-settings tabs
-    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'contacts' || tabName === 'ai-settings') && !isAuthenticated) {
+    // Check authentication for commands, rooms, contacts, scheduled-tasks, and ai-settings tabs
+    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'contacts' || tabName === 'scheduled-tasks' || tabName === 'ai-settings') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
@@ -472,6 +472,8 @@ function switchTab(tabName, buttonElement) {
         loadRooms();
     } else if (tabName === 'contacts') {
         loadContacts();
+    } else if (tabName === 'scheduled-tasks') {
+        loadScheduledTasks();
     } else if (tabName === 'ai-settings') {
         // Initialize first sub-tab as active
         document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -2258,7 +2260,7 @@ function restoreTabFromURL() {
 
     if (targetButton) {
         // Simulate tab click
-        if (mainTab === 'commands' || mainTab === 'rooms' || mainTab === 'contacts' || mainTab === 'ai-settings') {
+        if (mainTab === 'commands' || mainTab === 'rooms' || mainTab === 'contacts' || mainTab === 'scheduled-tasks' || mainTab === 'ai-settings') {
             // Check auth first
             if (!isAuthenticated) {
                 console.log('[Tab Restore] Authentication required for', mainTab);
@@ -2280,6 +2282,8 @@ function restoreTabFromURL() {
             loadRooms();
         } else if (mainTab === 'contacts') {
             loadContacts();
+        } else if (mainTab === 'scheduled-tasks') {
+            loadScheduledTasks();
         } else if (mainTab === 'ai-settings') {
             loadAIDefaults();
             loadApiConfig();

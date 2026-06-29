@@ -1435,6 +1435,117 @@ class BotDashboard {
                 res.status(500).json({ success: false, error: error.message });
             }
         });
+
+        // ===== SCHEDULED TASKS ENDPOINTS =====
+
+        // API: Get all scheduled tasks
+        this.app.get('/api/scheduled-tasks', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { status } = req.query;
+                const scheduleManager = require('./scheduleManager');
+
+                let tasks;
+                if (status && status !== 'all') {
+                    tasks = await scheduleManager.getAllTasks(status);
+                } else {
+                    tasks = await scheduleManager.getAllTasks();
+                }
+
+                // Sort by scheduled time
+                tasks.sort((a, b) => {
+                    if (a.status === 'pending' && b.status === 'pending') {
+                        return a.scheduledTime - b.scheduledTime;
+                    }
+                    return b.createdAt - a.createdAt;
+                });
+
+                res.json({ success: true, tasks, count: tasks.length });
+            } catch (error) {
+                this.addLog('error', `Failed to get scheduled tasks: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get specific task
+        this.app.get('/api/scheduled-tasks/:taskId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { taskId } = req.params;
+                const scheduleManager = require('./scheduleManager');
+
+                const task = await scheduleManager.getTask(taskId);
+
+                if (!task) {
+                    return res.status(404).json({ success: false, error: 'Task not found' });
+                }
+
+                res.json({ success: true, task });
+            } catch (error) {
+                this.addLog('error', `Failed to get task: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Cancel scheduled task
+        this.app.delete('/api/scheduled-tasks/:taskId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { taskId } = req.params;
+                const scheduleManager = require('./scheduleManager');
+                const taskScheduler = require('./taskScheduler');
+
+                // Get task first
+                const task = await scheduleManager.getTask(taskId);
+
+                if (!task) {
+                    return res.status(404).json({ success: false, error: 'Task not found' });
+                }
+
+                // Check if task is still pending
+                if (task.status !== 'pending') {
+                    return res.status(400).json({
+                        success: false,
+                        error: `Cannot cancel task with status "${task.status}"`
+                    });
+                }
+
+                // Remove from cache
+                taskScheduler.removeTaskFromCache(taskId);
+
+                // Update status
+                await scheduleManager.updateTaskStatus(taskId, 'cancelled', {
+                    cancelledAt: Date.now()
+                });
+
+                this.addLog('success', `Cancelled scheduled task: ${taskId}`);
+                res.json({ success: true, message: 'Task cancelled successfully' });
+            } catch (error) {
+                this.addLog('error', `Failed to cancel task: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Get scheduler status
+        this.app.get('/api/scheduler-status', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const taskScheduler = require('./taskScheduler');
+                const status = taskScheduler.getStatus();
+                const pendingTasks = taskScheduler.getPendingTasksFromCache();
+
+                res.json({
+                    success: true,
+                    status: {
+                        ...status,
+                        pendingTasks: pendingTasks.map(t => ({
+                            taskId: t.taskId,
+                            instruction: t.instruction.substring(0, 100),
+                            scheduledTime: t.scheduledTime,
+                            timeUntil: t.scheduledTime - Date.now()
+                        }))
+                    }
+                });
+            } catch (error) {
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
     }
     
     setupSocketIO() {
