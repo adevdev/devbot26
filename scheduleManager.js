@@ -67,7 +67,7 @@ async function addTask(task) {
         taskId,
         instruction: task.instruction,
         scheduledTime: task.scheduledTime, // timestamp
-        targetJid: task.targetJid,
+        callFrom: task.callFrom,
         createdBy: task.createdBy,
         status: 'pending',
         createdAt: Date.now()

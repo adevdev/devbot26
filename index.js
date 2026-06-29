@@ -1,3 +1,91 @@
+// ===== CONSOLE OVERRIDES - MUST BE FIRST =====
+// Suppress verbose Baileys session logs BEFORE any modules load
+
+const originalConsoleLog = console.log.bind(console);
+const originalConsoleError = console.error.bind(console);
+const originalConsoleWarn = console.warn.bind(console);
+const originalConsoleInfo = console.info.bind(console);
+const originalConsoleDir = console.dir.bind(console);
+const originalConsoleDebug = console.debug.bind(console);
+
+// Unified suppression function
+function shouldSuppressSessionLog(args) {
+    const firstArg = args[0];
+    const secondArg = args[1];
+
+    // Check string pattern
+    if (typeof firstArg === 'string' &&
+        (firstArg.includes('Closing session') || firstArg.includes('Closing open session'))) {
+        return true;
+    }
+
+    // Check if any argument is a SessionEntry object
+    for (const arg of args) {
+        if (arg && typeof arg === 'object' &&
+            (arg._chains || arg.registrationId ||
+             arg.currentRatchet || arg.indexInfo || arg.pendingPreKey)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+// Override ALL console methods
+console.log = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Verbose log suppressed');
+        return;
+    }
+    originalConsoleLog.apply(console, args);
+};
+
+console.error = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Session error suppressed');
+        return;
+    }
+    if (typeof args[0] === 'string' && args[0].includes('Bad MAC')) {
+        originalConsoleLog('[Session] Bad MAC error suppressed');
+        return;
+    }
+    originalConsoleError.apply(console, args);
+};
+
+console.warn = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Session warning suppressed');
+        return;
+    }
+    originalConsoleWarn.apply(console, args);
+};
+
+console.info = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Session info suppressed');
+        return;
+    }
+    originalConsoleInfo.apply(console, args);
+};
+
+console.dir = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Session dir suppressed');
+        return;
+    }
+    originalConsoleDir.apply(console, args);
+};
+
+console.debug = function(...args) {
+    if (shouldSuppressSessionLog(args)) {
+        originalConsoleLog('[Session] Session debug suppressed');
+        return;
+    }
+    originalConsoleDebug.apply(console, args);
+};
+
+// ===== NOW LOAD MODULES =====
+
 const wachan = require('wachan');
 const commands = require('wachan/commands');
 const BotDashboard = require('./dashboard');
@@ -43,9 +131,6 @@ function cleanupMessageCache() {
 // Start cleanup interval
 setInterval(cleanupMessageCache, MESSAGE_CACHE_CLEANUP_INTERVAL);
 
-// Intercept console.log to pipe to dashboard (with strict filtering)
-const originalConsoleLog = console.log.bind(console);
-
 // Safe JSON stringify with circular reference handling
 function safeStringify(obj, maxLength = 1000) {
     const seen = new WeakSet();
@@ -66,6 +151,8 @@ function safeStringify(obj, maxLength = 1000) {
     }
 }
 
+// Pipe console.log to dashboard (session suppression already handled at top)
+const dashboardLogger = console.log;
 console.log = function(...args) {
     try {
         const message = args.map(arg => {
@@ -75,29 +162,29 @@ console.log = function(...args) {
             return String(arg);
         }).join(' ');
 
-        // Still log to PowerShell
-        originalConsoleLog(...args);
+        // Still log to PowerShell via original override
+        dashboardLogger(...args);
 
         // Block technical detail logs from dashboard
         const blockPrefixes = [
-            '[AI] Command from',     // Detailed AI command logs
-            '[AI] Auto-adding',      // Auto-add details
-            '[AI] Got user data',    // User data fetch details
-            '[AI] Auto-added',       // Auto-add confirmation details
-            '[AI] Quota check',      // Quota check details
-            '[AI] User model',       // Model selection details
-            '[AI] Starting API',     // API call start
-            '[AI] Initial API',      // API response details
-            '[AI] Final text',       // Text extraction details
-            '[AI] Response',         // Response generation details
-            '[AI] Usage',            // Usage increment details
-            '[AI Settings]',         // Settings operations
-            '[Whitelist]',           // Whitelist checks
-            '[Quota]',               // Quota calculations
-            '[Memory]',              // Memory operations
-            '[DASHBOARD] Terminal',  // WebSocket events
-            '[AIADD]',              // User management details
-            'Synced'                 // Sync messages
+            '[AI] Command from',
+            '[AI] Auto-adding',
+            '[AI] Got user data',
+            '[AI] Auto-added',
+            '[AI] Quota check',
+            '[AI] User model',
+            '[AI] Starting API',
+            '[AI] Initial API',
+            '[AI] Final text',
+            '[AI] Response',
+            '[AI] Usage',
+            '[AI Settings]',
+            '[Whitelist]',
+            '[Quota]',
+            '[Memory]',
+            '[DASHBOARD] Terminal',
+            '[AIADD]',
+            'Synced'
         ];
 
         const shouldBlock = blockPrefixes.some(prefix => message.startsWith(prefix));
@@ -107,9 +194,8 @@ console.log = function(...args) {
             dashboard.addLog('info', message);
         }
     } catch (error) {
-        // Fallback: if anything fails in logging, still log to console
         originalConsoleLog('[LOG ERROR]', error.message);
-        originalConsoleLog(...args);
+        dashboardLogger(...args);
     }
 };
 
@@ -879,26 +965,6 @@ wachan.onConnected(async () => {
         botSocket.ev.on('messages.upsert', () => {
             lastActivity = Date.now();
         });
-
-        // Handle session errors (suppress verbose "Closing session" logs)
-        // These are normal during session rotation and don't need detailed logging
-        const originalConsoleError = console.error;
-        console.error = function(...args) {
-            const message = args.join(' ');
-
-            // Suppress verbose session closing logs (these are normal)
-            if (message.includes('Closing open session') ||
-                message.includes('Closing session: SessionEntry')) {
-                // Log simplified version instead
-                if (message.includes('Closing open session')) {
-                    console.log('[Session] Rotating session (normal behavior)');
-                }
-                return; // Skip the verbose output
-            }
-
-            // Pass through other errors normally
-            originalConsoleError.apply(console, args);
-        };
     }
 
     // Wrap sendMessage to auto-inject 1 year ephemeral and track sent messages

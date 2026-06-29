@@ -101,7 +101,7 @@ async function executeTask(task) {
         // Create Baileys-compatible message object
         const baileysMockMessage = {
             key: {
-                remoteJid: task.targetJid,
+                remoteJid: task.callFrom,
                 fromMe: false,
                 id: `SCHEDULED_${task.taskId}`
             },
@@ -114,15 +114,15 @@ async function executeTask(task) {
         // Create minimal message object with all required methods
         const minimalMessage = {
             text: task.instruction,
-            room: task.targetJid, // Group JID or user JID
-            from: task.targetJid,
+            room: task.callFrom, // Group JID or user JID
+            from: task.callFrom,
             sender: {
                 id: task.createdBy,
                 name: 'Scheduled Task'
             },
             key: {
                 id: `SCHEDULED_${task.taskId}`,
-                remoteJid: task.targetJid,
+                remoteJid: task.callFrom,
                 fromMe: false
             },
             // Required methods
@@ -149,7 +149,7 @@ async function executeTask(task) {
             group: null,
             reply: async (text) => {
                 // AI reply goes to the target room (group or private)
-                await wachan.sendMessage(task.targetJid, { text });
+                await wachan.sendMessage(task.callFrom, { text });
             }
         };
 
@@ -158,7 +158,7 @@ async function executeTask(task) {
 
         // If AI returned text (not already sent via tools/reply), send it
         if (response) {
-            await wachan.sendMessage(task.targetJid, {
+            await wachan.sendMessage(task.callFrom, {
                 text: `📅 *Scheduled Task Result*\n\n${response}`
             });
         }
@@ -189,7 +189,7 @@ async function executeTask(task) {
         // Notify target about failure
         try {
             const wachan = require('wachan');
-            await wachan.sendMessage(task.targetJid, {
+            await wachan.sendMessage(task.callFrom, {
                 text: `❌ *Scheduled Task Failed*\n\n${task.instruction}\n\nError: ${error.message}`
             });
         } catch (notifyError) {

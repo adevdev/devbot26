@@ -74,10 +74,6 @@ module.exports = {
                 scheduledTime: {
                     type: 'string',
                     description: 'When to execute the task. Supports two formats: 1) Relative time: "in 30 minutes", "in 2 hours", "in 1 day" 2) Absolute ISO date: "2024-12-25T10:00:00" or "2024-12-25T10:00:00+07:00" (with timezone)'
-                },
-                targetJid: {
-                    type: 'string',
-                    description: 'Optional. WhatsApp JID where the task result should be sent. Format: "6289xxx@s.whatsapp.net" for users or "120363xxx@g.us" for groups. If not provided, result will be sent to the current chat.'
                 }
             },
             required: ['instruction', 'scheduledTime']
@@ -92,7 +88,7 @@ module.exports = {
 
     // Execution logic
     execute: async function(input, context) {
-        const { instruction, scheduledTime, targetJid } = input;
+        const { instruction, scheduledTime } = input;
 
         try {
             // Parse scheduled time
@@ -112,18 +108,17 @@ module.exports = {
                 });
             }
 
-            // Determine target JID
-            let finalTargetJid = targetJid;
-            if (!finalTargetJid) {
-                // Use current chat as target - prioritize room (group) over from (private)
-                finalTargetJid = context?.room || context?.message?.room || context?.message?.from;
+            // Auto-detect target room from context
+            // Priority: context.room (group/chat room) > context.message.room > context.message.from (sender)
+            const callFrom = context?.room || context?.message?.room || context?.message?.from;
 
-                if (!finalTargetJid) {
-                    return JSON.stringify({
-                        error: 'Cannot determine target chat. Please specify targetJid parameter.'
-                    });
-                }
+            if (!callFrom) {
+                return JSON.stringify({
+                    error: 'Cannot determine target chat from context'
+                });
             }
+
+            console.log(`[ScheduleTask] Auto-detected callFrom: ${callFrom} (context.room: ${context?.room}, message.room: ${context?.message?.room}, message.from: ${context?.message?.from})`);
 
             // Get creator JID
             const createdBy = context?.message?.sender?.id || context?.message?.from || 'unknown';
@@ -132,7 +127,7 @@ module.exports = {
             const task = {
                 instruction,
                 scheduledTime: scheduledTimestamp,
-                targetJid: finalTargetJid,
+                callFrom: callFrom,
                 createdBy
             };
 
@@ -165,7 +160,7 @@ module.exports = {
                 instruction: instruction,
                 scheduledTime: formatTime(scheduledTimestamp),
                 timeUntil: timeUntilStr,
-                targetJid: finalTargetJid
+                callFrom: callFrom
             });
 
         } catch (error) {

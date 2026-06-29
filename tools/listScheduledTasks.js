@@ -80,7 +80,7 @@ module.exports = {
                     instruction: task.instruction,
                     scheduledTime: formatTime(task.scheduledTime),
                     scheduledTimestamp: task.scheduledTime,
-                    targetJid: task.targetJid,
+                    callFrom: task.callFrom,
                     status: task.status,
                     createdAt: formatTime(task.createdAt)
                 };
