@@ -8,16 +8,96 @@ const fs = require('fs');
 const path = require('path');
 
 /**
+ * Remove emoji characters from text
+ * PDFKit's standard fonts don't support emoji
+ * Conservative regex to avoid corrupting normal text
+ */
+function stripEmojis(text) {
+    // Remove actual emoji ranges only
+    // DO NOT use character ranges for variation selectors - too dangerous!
+    return text.replace(/[\u{1F300}-\u{1F5FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F700}-\u{1F77F}]|[\u{1F780}-\u{1F7FF}]|[\u{1F800}-\u{1F8FF}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '');
+}
+
+/**
  * Parse and render text with Markdown formatting
  * Supports **bold** and *italic*
+ * Supports per-paragraph indent with [indent:X] marker
+ * ROBUST: Handles markers even if they appear mid-text (splits into paragraphs)
+ * @param {Object} doc - PDFDocument instance
+ * @param {string} text - Text content to render
+ * @param {string} align - Text alignment (left, center, right, justify)
+ * @param {number} defaultIndent - Default left indentation in points
  */
-function renderFormattedText(doc, text) {
-    // Split by paragraphs (double newline)
-    const paragraphs = text.split(/\n\n+/);
+function renderFormattedText(doc, text, align = 'left', defaultIndent = 0) {
+    // First, split by [indent:X] markers to create implicit paragraphs
+    // This handles cases where AI didn't insert proper \n\n breaks
+    const markerSplitPattern = /(\[indent:\d+\])/g;
+    const segments = text.split(markerSplitPattern);
 
-    for (let i = 0; i < paragraphs.length; i++) {
-        const paragraph = paragraphs[i].trim();
-        if (!paragraph) continue;
+    // Reassemble into paragraphs with proper structure
+    const reconstructedParagraphs = [];
+    let currentParagraph = '';
+    let currentIndent = null;
+
+    for (const segment of segments) {
+        const markerMatch = segment.match(/^\[indent:(\d+)\]$/);
+
+        if (markerMatch) {
+            // This is a marker
+            // Save current paragraph if exists
+            if (currentParagraph.trim()) {
+                reconstructedParagraphs.push({
+                    text: currentParagraph.trim(),
+                    indent: currentIndent !== null ? currentIndent : defaultIndent
+                });
+            }
+            // Set new indent for next paragraph
+            currentIndent = parseInt(markerMatch[1], 10);
+            currentParagraph = '';
+        } else {
+            // This is text content
+            currentParagraph += segment;
+        }
+    }
+
+    // Don't forget the last paragraph
+    if (currentParagraph.trim()) {
+        reconstructedParagraphs.push({
+            text: currentParagraph.trim(),
+            indent: currentIndent !== null ? currentIndent : defaultIndent
+        });
+    }
+
+    // Now split each reconstructed paragraph by \n\n to handle explicit breaks
+    const finalParagraphs = [];
+    for (const para of reconstructedParagraphs) {
+        const subParagraphs = para.text.split(/\n\n+/);
+        for (const subPara of subParagraphs) {
+            if (subPara.trim()) {
+                finalParagraphs.push({
+                    text: subPara.trim(),
+                    indent: para.indent
+                });
+            }
+        }
+    }
+
+    // Get page margins
+    const pageMargins = doc.page.margins;
+
+    // Render each paragraph
+    for (let i = 0; i < finalParagraphs.length; i++) {
+        const { text: paragraph, indent: paragraphIndent } = finalParagraphs[i];
+
+        // Save current x position and calculate new x with indent
+        const originalX = doc.x;
+        const indentedX = pageMargins.left + paragraphIndent;
+
+        // Set x position for this paragraph
+        doc.x = indentedX;
+
+        // Calculate max width for text with indent
+        const maxWidth = doc.page.width - pageMargins.left - pageMargins.right - paragraphIndent;
 
         // Parse inline formatting (bold and italic)
         const tokens = parseInlineFormatting(paragraph);
@@ -38,15 +118,20 @@ function renderFormattedText(doc, text) {
                 doc.font('Helvetica');
             }
 
-            // Add text (continue if not last token in paragraph)
+            // Add text with alignment and proper width
             doc.text(token.text, {
                 continued: !isLast,
+                align: align,
+                width: maxWidth,
                 lineGap: 3
             });
         }
 
+        // Restore original x position
+        doc.x = originalX;
+
         // Add space between paragraphs
-        if (i < paragraphs.length - 1) {
+        if (i < finalParagraphs.length - 1) {
             doc.moveDown(0.8);
         }
     }
@@ -55,14 +140,17 @@ function renderFormattedText(doc, text) {
 /**
  * Parse inline formatting (bold, italic)
  * Returns array of tokens with formatting flags
+ * *text* = bold (intuitive for most users)
+ * **text** = bold (standard Markdown)
+ * _text_ = italic
  */
 function parseInlineFormatting(text) {
     const tokens = [];
     let currentPos = 0;
 
-    // Regex to match **bold** or *italic*
-    // **text** = bold, *text* = italic
-    const formatRegex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+    // Regex to match **bold**, *bold*, or _italic_
+    // Changed: *text* now produces BOLD (not italic)
+    const formatRegex = /(\*\*(.+?)\*\*|\*(.+?)\*|_(.+?)_)/g;
     let match;
 
     while ((match = formatRegex.exec(text)) !== null) {
@@ -74,11 +162,14 @@ function parseInlineFormatting(text) {
 
         // Add formatted text
         if (match[2]) {
-            // **bold**
+            // **bold** (double asterisk)
             tokens.push({ text: match[2], bold: true, italic: false });
         } else if (match[3]) {
-            // *italic*
-            tokens.push({ text: match[3], bold: false, italic: true });
+            // *bold* (single asterisk - CHANGED to bold instead of italic)
+            tokens.push({ text: match[3], bold: true, italic: false });
+        } else if (match[4]) {
+            // _italic_ (underscore)
+            tokens.push({ text: match[4], bold: false, italic: true });
         }
 
         currentPos = match.index + match[0].length;
@@ -107,7 +198,7 @@ module.exports = {
                 },
                 content: {
                     type: 'string',
-                    description: 'Main content of the PDF. Supports basic Markdown formatting: **bold text**, *italic text*. Use \\n\\n for paragraph breaks.'
+                    description: 'Main content of the PDF. Supports basic Markdown formatting: **bold text**, *italic text*. Use \\n\\n for paragraph breaks. Per-paragraph indent: use [indent:X] at the start of a paragraph to set custom indent (X = points), e.g., "[indent:20]First paragraph with 20pt indent\\n\\n[indent:10]Second paragraph with 10pt indent". Paragraphs without [indent:X] marker use the default indent parameter.'
                 },
                 filename: {
                     type: 'string',
@@ -116,6 +207,15 @@ module.exports = {
                 fontSize: {
                     type: 'number',
                     description: 'Font size for body text (default: 12). Title will be larger automatically.'
+                },
+                align: {
+                    type: 'string',
+                    enum: ['left', 'center', 'right', 'justify'],
+                    description: 'Text alignment for body content (default: left). Options: left, center, right, justify.'
+                },
+                indent: {
+                    type: 'number',
+                    description: 'Indentation from left margin in points (default: 0). Use for additional spacing from the left edge. Example: 20 for moderate indent, 50 for large indent.'
                 },
                 author: {
                     type: 'string',
@@ -135,10 +235,25 @@ module.exports = {
 
     // Execution logic
     execute: async function(input, context) {
-        const { title, content, filename, fontSize = 12, author } = input;
+        let { title, content, filename, fontSize = 12, align = 'left', indent = 0, author } = input;
 
         try {
+            // Strip emojis from title and content (PDFKit's standard fonts don't support emoji)
+            if (title) {
+                title = stripEmojis(title);
+            }
+            if (content) {
+                content = stripEmojis(content);
+            }
+
             console.log('[CreatePDF] Starting PDF generation');
+            console.log('[CreatePDF] Raw content received (after emoji stripping):');
+            console.log('---START CONTENT---');
+            console.log(content);
+            console.log('---END CONTENT---');
+            console.log('[CreatePDF] Content length:', content.length);
+            console.log('[CreatePDF] Align:', align, 'Default indent:', indent);
+            console.log();
 
             // Generate filename if not provided
             const finalFilename = filename || `document_${Date.now()}.pdf`;
@@ -193,8 +308,8 @@ module.exports = {
             // Add content with Markdown formatting support
             doc.fontSize(fontSize);
 
-            // Parse and render content with formatting
-            renderFormattedText(doc, content);
+            // Parse and render content with formatting, alignment, and indent
+            renderFormattedText(doc, content, align, indent);
 
             // Add simple footer (without page switching which can cause corruption)
             doc.moveDown(2);

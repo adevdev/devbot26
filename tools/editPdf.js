@@ -164,8 +164,19 @@ module.exports = {
                     const existingPdf = fs.readFileSync(inputFile);
                     pdfDoc = await PDFDocument.load(existingPdf);
 
-                    // Create new page
-                    const insertPosition = insertAt !== undefined ? insertAt : pdfDoc.getPageCount();
+                    const totalPages = pdfDoc.getPageCount();
+
+                    // Create new page - clamp insertPosition to valid range [0, totalPages]
+                    let insertPosition = insertAt !== undefined ? insertAt : totalPages;
+
+                    // Validate and clamp insertPosition
+                    if (insertPosition < 0) {
+                        insertPosition = 0;
+                    } else if (insertPosition > totalPages) {
+                        insertPosition = totalPages; // Insert at end
+                        console.log(`[EditPDF] insertAt ${insertAt} exceeds page count ${totalPages}, inserting at end`);
+                    }
+
                     const newPage = pdfDoc.insertPage(insertPosition);
 
                     const pageFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
@@ -187,7 +198,7 @@ module.exports = {
                     const pdfWithPage = await pdfDoc.save();
                     fs.writeFileSync(outputPath, pdfWithPage);
 
-                    console.log(`[EditPDF] New page added at position ${insertPosition}`);
+                    console.log(`[EditPDF] New page added at position ${insertPosition} (total pages now: ${pdfDoc.getPageCount()})`);
                     break;
 
                 case 'remove_pages':
@@ -202,12 +213,12 @@ module.exports = {
                     const pdfToEdit = fs.readFileSync(inputFile);
                     pdfDoc = await PDFDocument.load(pdfToEdit);
 
-                    const totalPages = pdfDoc.getPageCount();
+                    const pageCount = pdfDoc.getPageCount();
 
                     // Remove pages (in reverse order to avoid index shifting)
                     const pagesToRemove = [...pageNumbers]
                         .map(n => n - 1) // Convert to 0-indexed
-                        .filter(n => n >= 0 && n < totalPages)
+                        .filter(n => n >= 0 && n < pageCount)
                         .sort((a, b) => b - a); // Reverse order
 
                     for (const pageIndex of pagesToRemove) {
