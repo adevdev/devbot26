@@ -63,6 +63,10 @@ module.exports = {
                     type: 'string',
                     description: 'Direct URL to the document file (e.g., https://example.com/file.pdf). Use this for remote files.'
                 },
+                targetJid: {
+                    type: 'string',
+                    description: 'Optional. WhatsApp JID of the recipient (e.g., "6281234567890@s.whatsapp.net" for users or "120363012345678901@g.us" for groups). If not provided, sends to the current chat.'
+                },
                 filename: {
                     type: 'string',
                     description: 'Optional filename for the document. If not provided, will be extracted from filePath or URL. Include file extension (e.g., "report.pdf", "data.xlsx")'
@@ -89,10 +93,44 @@ module.exports = {
 
     // Execution logic
     execute: async function(input, context) {
-        const { filePath, url, filename, mimetype, caption } = input;
+        const { filePath, url, targetJid, filename, mimetype, caption } = input;
 
         try {
             console.log('[SendDocument] Preparing to send:', filePath || url);
+
+            // Owner check for targetJid override
+            const senderId = context?.message?.sender?.id || context?.message?.from;
+            const OWNER_ID = process.env.OWNER_ID;
+
+            // Determine current room
+            const currentRoom = context?.room || context?.message?.room || context?.message?.from;
+
+            // Determine target JID
+            let finalTargetJid = targetJid;
+
+            // If not owner and trying to send to different target, deny
+            if (!OWNER_ID || senderId !== OWNER_ID) {
+                // Check if targetJid was explicitly provided and is different from current room
+                if (targetJid && targetJid !== currentRoom) {
+                    console.log(`[SendDocument] Non-owner ${senderId} attempted to send to ${targetJid} (current: ${currentRoom}) - DENIED`);
+                    return JSON.stringify({
+                        success: false,
+                        error: 'Permission denied: You can only send documents to the current chat. Sending to other chats is restricted to owner only.',
+                        denied: true
+                    });
+                }
+                // Force current room
+                finalTargetJid = currentRoom;
+            } else if (!finalTargetJid) {
+                // Owner but no targetJid provided - auto-detect
+                finalTargetJid = currentRoom;
+            }
+
+            if (!finalTargetJid) {
+                return JSON.stringify({
+                    error: 'Cannot determine target chat. Please provide targetJid parameter.'
+                });
+            }
 
             let buffer;
             let finalFilename;
@@ -120,14 +158,6 @@ module.exports = {
 
             console.log(`[SendDocument] File: ${finalFilename}, MIME: ${finalMimetype}, Size: ${buffer.length} bytes`);
 
-            // Get target JID from context
-            const targetJid = context?.message?.room || context?.message?.from;
-            if (!targetJid) {
-                return JSON.stringify({
-                    error: 'Cannot determine target chat'
-                });
-            }
-
             // Send via wachan
             const message = {
                 document: buffer,
@@ -137,13 +167,14 @@ module.exports = {
 
             if (caption) message.caption = caption;
 
-            await wachan.sendMessage(targetJid, message);
+            await wachan.sendMessage(finalTargetJid, message);
 
             return JSON.stringify({
                 success: true,
                 filename: finalFilename,
                 size: buffer.length,
                 mimetype: finalMimetype,
+                targetJid: finalTargetJid,
                 caption: caption || null
             });
 

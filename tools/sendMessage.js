@@ -11,7 +11,7 @@ module.exports = {
         input_schema: {
             type: 'object',
             properties: {
-                targetId: {
+                targetJid: {
                     type: 'string',
                     description: 'WhatsApp JID of the recipient (e.g., "6281234567890@s.whatsapp.net" for users or "120363012345678901@g.us" for groups). Can also be a phone number which will be converted to JID format.'
                 },
@@ -24,41 +24,78 @@ module.exports = {
                     description: 'Optional: Message ID to quote/reply to. If provided, the sent message will appear as a reply to that message.'
                 }
             },
-            required: ['targetId', 'text']
+            required: ['targetJid', 'text']
         }
     },
 
     // Metadata for UI/UX
     metadata: {
         icon: '📤',
-        progressMessage: (input) => `Sending message to _${input.targetId}_`,
+        progressMessage: (input) => `Sending message to _${input.targetJid}_`,
         resultType: 'text'
     },
 
     // Execution logic
-    execute: async function(input) {
-        let { targetId, text, quotedMessageId } = input;
+    execute: async function(input, context) {
+        let { targetJid, text, quotedMessageId } = input;
 
         try {
             const wachan = require('wachan');
 
-            console.log(`[SendMessage] Preparing to send message to: ${targetId}`);
+            // Owner check for targetJid override
+            const senderId = context?.message?.sender?.id || context?.message?.from;
+            const OWNER_ID = process.env.OWNER_ID;
 
-            // Normalize targetId to JID format
-            if (!targetId.includes('@')) {
+            // Determine current room
+            const currentRoom = context?.room || context?.message?.room || context?.message?.from;
+
+            // If not owner and trying to send to different target, deny
+            if (!OWNER_ID || senderId !== OWNER_ID) {
+                // Normalize targetJid for comparison
+                let normalizedTarget = targetJid;
+                if (!normalizedTarget.includes('@')) {
+                    const cleaned = normalizedTarget.replace(/\D/g, '');
+                    normalizedTarget = `${cleaned}@s.whatsapp.net`;
+                }
+
+                // Check if trying to send to different chat
+                if (normalizedTarget !== currentRoom) {
+                    console.log(`[SendMessage] Non-owner ${senderId} attempted to send to ${normalizedTarget} (current: ${currentRoom}) - DENIED`);
+                    return JSON.stringify({
+                        success: false,
+                        error: 'Permission denied: You can only send messages to the current chat. Sending to other chats is restricted to owner only.',
+                        denied: true
+                    });
+                }
+
+                // Set to current room (redundant but explicit)
+                targetJid = currentRoom;
+            }
+
+            if (!targetJid) {
+                return JSON.stringify({
+                    success: false,
+                    error: 'Cannot determine target chat'
+                });
+            }
+
+            console.log(`[SendMessage] Preparing to send message to: ${targetJid}`);
+
+            // Normalize targetJid to JID format
+            if (!targetJid.includes('@')) {
                 // If it's just a number, assume it's a phone number for a user
-                const cleaned = targetId.replace(/\D/g, '');
-                targetId = `${cleaned}@s.whatsapp.net`;
-                console.log(`[SendMessage] Normalized to JID: ${targetId}`);
+                const cleaned = targetJid.replace(/\D/g, '');
+                targetJid = `${cleaned}@s.whatsapp.net`;
+                console.log(`[SendMessage] Normalized to JID: ${targetJid}`);
             }
 
             // Handle LID conversion if needed
-            if (targetId.includes('@lid')) {
+            if (targetJid.includes('@lid')) {
                 try {
-                    const userData = await wachan.getUserData(targetId);
+                    const userData = await wachan.getUserData(targetJid);
                     const actualJid = userData.id;
-                    console.log(`[SendMessage] Converted LID ${targetId} to JID ${actualJid}`);
-                    targetId = actualJid;
+                    console.log(`[SendMessage] Converted LID ${targetJid} to JID ${actualJid}`);
+                    targetJid = actualJid;
                 } catch (e) {
                     console.error('[SendMessage] Failed to convert LID:', e);
                     return JSON.stringify({
@@ -92,15 +129,15 @@ module.exports = {
             }
 
             // Send the message
-            console.log(`[SendMessage] Sending to ${targetId}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
+            console.log(`[SendMessage] Sending to ${targetJid}: ${text.substring(0, 50)}${text.length > 50 ? '...' : ''}`);
 
-            const sentMessage = await wachan.sendMessage(targetId, messageOptions);
+            const sentMessage = await wachan.sendMessage(targetJid, messageOptions);
 
             const result = {
                 success: true,
                 message: 'Message sent successfully',
                 data: {
-                    targetId: targetId,
+                    targetJid: targetJid,
                     messageId: sentMessage?.key?.id || 'unknown',
                     timestamp: Date.now(),
                     textLength: text.length,
@@ -118,7 +155,7 @@ module.exports = {
             return JSON.stringify({
                 success: false,
                 error: error.message,
-                targetId: targetId
+                targetJid: targetJid
             });
         }
     }
