@@ -1011,3 +1011,6 @@ async function initBot() {
         });
     }
 }
+
+// Export dashboard for tools that need to access activeWaitSessions
+module.exports = { dashboard };
