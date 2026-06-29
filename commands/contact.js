@@ -39,6 +39,8 @@ module.exports = {
     options: {
         aliases: ['contacts', 'contactlist'],
         description: 'List saved contacts',
-        sectionName: 'Tools'
+        sectionName: 'Owner',
+        ownerOnly: true,
+        hidden: true
     }
 };

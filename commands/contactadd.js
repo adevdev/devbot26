@@ -153,6 +153,8 @@ module.exports = {
     options: {
         aliases: ['caddcontact', 'addcontact'],
         description: 'Add contact from mention or quoted message (owner-only)',
-        sectionName: 'Owner'
+        sectionName: 'Owner',
+        ownerOnly: true,
+        hidden: true
     }
 };
