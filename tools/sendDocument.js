@@ -167,7 +167,22 @@ module.exports = {
 
             if (caption) message.caption = caption;
 
+            console.log(`[SendDocument] Sending to ${finalTargetJid}`);
+
             await wachan.sendMessage(finalTargetJid, message);
+
+            console.log(`[SendDocument] Document sent successfully`);
+
+            // Auto-cleanup: Delete temp files after successful send
+            if (filePath && filePath.includes(path.sep + 'temp' + path.sep)) {
+                try {
+                    fs.unlinkSync(filePath);
+                    console.log(`[SendDocument] Cleaned up temp file: ${filePath}`);
+                } catch (cleanupError) {
+                    console.warn(`[SendDocument] Failed to cleanup temp file: ${cleanupError.message}`);
+                    // Don't fail the whole operation if cleanup fails
+                }
+            }
 
             return JSON.stringify({
                 success: true,
@@ -175,7 +190,8 @@ module.exports = {
                 size: buffer.length,
                 mimetype: finalMimetype,
                 targetJid: finalTargetJid,
-                caption: caption || null
+                caption: caption || null,
+                tempFileDeleted: filePath && filePath.includes(path.sep + 'temp' + path.sep)
             });
 
         } catch (error) {
