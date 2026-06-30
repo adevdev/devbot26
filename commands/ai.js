@@ -417,6 +417,12 @@ module.exports = {
 
 // Call AI API with tool support (multi-turn)
 async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null, workingIdentifier = null, pdfFilePath = null) {
+    // Validate roomJid
+    if (!roomJid || typeof roomJid !== 'string') {
+        console.error('[AI] Invalid roomJid:', roomJid);
+        throw new Error('Invalid room identifier. Cannot process AI request.');
+    }
+
     // Get bot instance for context
     const bot = require('wachan');
 
@@ -526,7 +532,7 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     const userEnabledTools = await whitelistManager.getEnabledTools(workingIdentifier || message.sender.id);
     if (userEnabledTools && userEnabledTools.length > 0) {
         // User has specific tools enabled - filter to only those
-        toolDefinitions = toolDefinitions.filter(tool => userEnabledTools.includes(tool.name));
+        toolDefinitions = toolDefinitions.filter(tool => tool && tool.name && userEnabledTools.includes(tool.name));
         console.log(`[AI] User ${workingIdentifier || message.sender.id} has ${userEnabledTools.length} enabled tools: ${userEnabledTools.join(', ')}`);
     } else {
         // Empty array = no tools enabled
@@ -562,16 +568,16 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         if (toolUses.length === 0) break;
 
         // Validate tools FIRST before sending progress
-        const allowedToolNames = toolDefinitions.map(t => t.name);
+        const allowedToolNames = toolDefinitions.map(t => t.name).filter(name => name !== undefined);
         const allowedToolUses = [];
         const blockedToolUses = [];
 
         for (const toolUse of toolUses) {
-            if (allowedToolNames.includes(toolUse.name)) {
+            if (toolUse && toolUse.name && allowedToolNames.includes(toolUse.name)) {
                 allowedToolUses.push(toolUse);
             } else {
                 blockedToolUses.push(toolUse);
-                console.log(`[AI] Tool execution blocked: ${toolUse.name} not in user's enabled tools`);
+                console.log(`[AI] Tool execution blocked: ${toolUse?.name || 'unknown'} not in user's enabled tools`);
             }
         }
 
@@ -1073,6 +1079,12 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 // Helper function to save conversation to memory
 async function saveToMemory(roomJid, userPrompt, aiResponse, model, userMessage, imageBuffer, group = null) {
     try {
+        // Validate roomJid
+        if (!roomJid || typeof roomJid !== 'string') {
+            console.error('[Memory] Invalid roomJid, skipping save:', roomJid);
+            return;
+        }
+
         // Skip saving if room is bot's own ID (prevent self-memory)
         const wachan = require('wachan');
         try {

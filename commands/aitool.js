@@ -25,13 +25,13 @@ module.exports = {
 
         // Filter out template/example tools
         const excludedTools = ['my_tool_name']; // Template tools to hide from listing
-        let visibleTools = toolDefs.filter(tool => !excludedTools.includes(tool.name));
+        let visibleTools = toolDefs.filter(tool => tool && tool.name && !excludedTools.includes(tool.name));
 
         // Filter by user's enabled tools
         // If userEnabledTools is empty array → all tools enabled
         // If userEnabledTools has items → only show those tools
         if (userEnabledTools.length > 0) {
-            visibleTools = visibleTools.filter(tool => userEnabledTools.includes(tool.name));
+            visibleTools = visibleTools.filter(tool => tool && tool.name && userEnabledTools.includes(tool.name));
         }
 
         if (visibleTools.length === 0) {

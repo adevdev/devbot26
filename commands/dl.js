@@ -31,6 +31,11 @@ async function generateThumbnail(imageBuffer) {
 // Helper: Detect platform from URL
 // ============================================
 function detectPlatform(url) {
+    // Validate url is a string
+    if (!url || typeof url !== 'string') {
+        return 'Unknown';
+    }
+
     if (url.includes('tiktok.com')) return 'TikTok';
     if (url.includes('instagram.com')) return 'Instagram';
     if (url.includes('youtube.com') || url.includes('youtu.be')) return 'YouTube';

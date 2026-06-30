@@ -38,6 +38,11 @@ module.exports = {
             // Get first mentioned user
             let mentionedJid = mentions[0];
 
+            // Validate mentionedJid is a string
+            if (!mentionedJid || typeof mentionedJid !== 'string') {
+                return `*Error:* Invalid mention data. Please try again.`;
+            }
+
             // If it's a LID, convert to actual JID using getUserData
             if (mentionedJid.includes('@lid')) {
                 try {
@@ -71,6 +76,11 @@ module.exports = {
             if (quoted && quoted.sender) {
                 let quotedJid = quoted.sender.id;
 
+                // Validate quotedJid is a string
+                if (!quotedJid || typeof quotedJid !== 'string') {
+                    return `*Error:* Invalid quoted message data. Please try again.`;
+                }
+
                 // Convert LID to actual JID if needed
                 if (quotedJid.includes('@lid')) {
                     try {
@@ -85,6 +95,11 @@ module.exports = {
                     }
                 } else {
                     targetJid = quotedJid;
+                }
+
+                // Validate targetJid before using includes
+                if (!targetJid || typeof targetJid !== 'string') {
+                    return `*Error:* Failed to determine user/group ID. Please try again.`;
                 }
 
                 // Detect type from JID

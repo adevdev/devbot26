@@ -163,6 +163,12 @@ socket.on('init', (data) => {
             writeLine(formatLog(log));
         });
     }
+
+    // Restore tab from URL after auth is confirmed
+    // This ensures isAuthenticated is set before trying to switch tabs
+    setTimeout(() => {
+        restoreTabFromURL();
+    }, 50);
 });
 
 socket.on('log', (log) => {
@@ -2382,13 +2388,8 @@ function restoreTabFromURL() {
     }
 }
 
-// Call restore on page load (after login check)
-window.addEventListener('load', () => {
-    // Wait a bit for auth check to complete
-    setTimeout(() => {
-        restoreTabFromURL();
-    }, 100);
-});
+// Tab restoration is now handled in socket 'init' event
+// This ensures authentication status is ready before tab switching
 document.getElementById('addWhitelistCancel').addEventListener('click', () => {
     document.getElementById('addWhitelistModal').close();
 });
