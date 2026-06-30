@@ -77,6 +77,22 @@ class BotDashboard {
 
         this.app.use(sessionMiddleware);
         this.app.use(express.json());
+
+        // JSON parsing error handler
+        this.app.use((err, req, res, next) => {
+            if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+                this.addLog('error', `JSON Parse Error: ${err.message}`);
+                this.addLog('error', `Request URL: ${req.method} ${req.url}`);
+                this.addLog('error', `Request body (raw): ${JSON.stringify(req.body)}`);
+                return res.status(400).json({
+                    success: false,
+                    error: 'Invalid JSON in request body',
+                    details: err.message
+                });
+            }
+            next();
+        });
+
         this.app.use(express.static(path.join(__dirname, 'public')));
         this.app.use('/tmp', express.static(path.join(__dirname, 'tmp'))); // Serve temp files
 
