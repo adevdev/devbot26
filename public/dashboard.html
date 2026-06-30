@@ -749,6 +749,7 @@
             <!-- Sub-tabs for AI Settings -->
             <div class="ai-subtab-buttons" style="display: flex; gap: 0.5rem; margin-bottom: 1.5rem; border-bottom: 2px solid #0f0; padding-bottom: 0.5rem; overflow-x: auto; -webkit-overflow-scrolling: touch;">
                 <button class="tab-btn active" onclick="switchAiSubTab('defaults', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Defaults</button>
+                <button class="tab-btn" onclick="switchAiSubTab('provider', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Provider Config</button>
                 <button class="tab-btn" onclick="switchAiSubTab('api', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">API Config</button>
                 <button class="tab-btn" onclick="switchAiSubTab('models', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Models</button>
                 <button class="tab-btn" onclick="switchAiSubTab('memory', this)" style="background: transparent; border: none; color: #0f0; padding: 0.5rem 1rem; cursor: pointer; font-family: 'Courier New', monospace; flex: 0 0 auto; white-space: nowrap;">Memory</button>
@@ -816,13 +817,16 @@
                 </div>
             </div>
 
-            <!-- API Sub-tab -->
-            <div id="ai-subtab-api" class="ai-subtab-content" style="display: none;">
-                <!-- API Configuration Panel -->
+            <!-- Provider Config Sub-tab -->
+            <div id="ai-subtab-provider" class="ai-subtab-content" style="display: none;">
+                <!-- Provider API Configuration Panel -->
                 <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                        <h3 style="color: #0f0; margin: 0;">API Configuration</h3>
-                        <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit API</button>
+                        <h3 style="color: #0f0; margin: 0;">AI Provider Configuration</h3>
+                        <button class="btn btn-small" onclick="showEditApiConfigModal()">Edit Provider</button>
+                    </div>
+                    <div style="margin-bottom: 1rem; opacity: 0.8; font-size: 0.9rem;">
+                        Configure the AI provider endpoint (OpenAI/Claude API) that this bot uses to generate responses.
                     </div>
                     <div style="display: grid; grid-template-columns: 1fr 2fr 1fr; gap: 1rem;">
                         <div>
@@ -841,6 +845,122 @@
                     <div style="margin-top: 0.5rem; opacity: 0.6; font-size: 0.85rem;">
                         <span id="apiConfigSource">Using .env fallback values</span>
                         <button class="btn btn-small" onclick="revertApiConfig()" style="margin-left: 1rem; display: none;" id="revertApiBtn">Revert to .env</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- API Config Sub-tab (Bot API Access) -->
+            <div id="ai-subtab-api" class="ai-subtab-content" style="display: none;">
+                <!-- Bot API Access Panel -->
+                <div style="background: #000; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1.5rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="color: #0f0; margin: 0;">Bot API Access</h3>
+                    </div>
+                    <div style="margin-bottom: 1.5rem; opacity: 0.8; font-size: 0.9rem;">
+                        Use this API to programmatically send messages and interact with the bot from external applications.
+                    </div>
+
+                    <!-- API Key Display -->
+                    <div style="background: #0a0a0a; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
+                        <div style="margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">API Key:</small>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 1rem;">
+                            <code id="botApiKey" style="flex: 1; background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.85rem; word-break: break-all;">Loading...</code>
+                            <button class="btn btn-small" onclick="copyBotApiKey()" style="white-space: nowrap;">Copy</button>
+                        </div>
+                        <small style="color: #ff0; opacity: 0.8; display: block; margin-top: 0.5rem;">
+                            ⚠️ Keep this key secret. Anyone with this key can send messages through your bot.
+                        </small>
+                        <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid #333;">
+                            <div style="color: #0af; font-size: 0.85rem; margin-bottom: 0.5rem; font-weight: bold;">
+                                🔧 How to Change API Key:
+                            </div>
+                            <ol style="margin: 0; padding-left: 1.5rem; color: #0f0; opacity: 0.9; font-size: 0.85rem; line-height: 1.8;">
+                                <li>Open <code style="background: #000; padding: 0.2rem 0.4rem; border: 1px solid #0f0;">.env</code> file in your project root directory</li>
+                                <li>Find the line: <code style="background: #000; padding: 0.2rem 0.4rem; border: 1px solid #0f0;">BOT_API_SECRET=your-secret-key</code></li>
+                                <li>Change the value to your new secret key (min. 32 characters recommended)</li>
+                                <li>Save the file and restart the bot server</li>
+                                <li>Refresh this dashboard to see the new key</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <!-- API Endpoint -->
+                    <div style="background: #0a0a0a; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
+                        <div style="margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">API Endpoint:</small>
+                        </div>
+                        <code id="botApiEndpoint" style="display: block; background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.85rem; word-break: break-all;">Loading...</code>
+                    </div>
+
+                    <!-- Request Example -->
+                    <div style="background: #0a0a0a; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
+                        <div style="margin-bottom: 0.75rem; font-weight: bold; color: #0f0;">
+                            Example: Send Message
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">Request:</small>
+                        </div>
+                        <pre style="background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.75rem; overflow-x: auto; margin: 0;"><code>POST /api/send-message
+Content-Type: application/json
+X-API-Key: YOUR_API_KEY
+
+{
+  "to": "6281234567890",
+  "message": "Hello from API!"
+}</code></pre>
+                        <div style="margin-top: 1rem; margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">Response:</small>
+                        </div>
+                        <pre style="background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.75rem; overflow-x: auto; margin: 0;"><code>{
+  "success": true,
+  "message": "Message sent successfully",
+  "to": "6281234567890@s.whatsapp.net"
+}</code></pre>
+                    </div>
+
+                    <!-- Wait for Reply Example -->
+                    <div style="background: #0a0a0a; border: 1px solid #0f0; padding: 1rem; margin-bottom: 1rem; border-radius: 4px;">
+                        <div style="margin-bottom: 0.75rem; font-weight: bold; color: #0f0;">
+                            Example: Wait for Reply
+                        </div>
+                        <div style="margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">Request:</small>
+                        </div>
+                        <pre style="background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.75rem; overflow-x: auto; margin: 0;"><code>POST /api/wait-for-reply
+Content-Type: application/json
+X-API-Key: YOUR_API_KEY
+
+{
+  "from": "6281234567890",
+  "timeout": 60000
+}</code></pre>
+                        <div style="margin-top: 1rem; margin-bottom: 0.5rem;">
+                            <small style="opacity: 0.7;">Response:</small>
+                        </div>
+                        <pre style="background: #000; color: #0f0; padding: 0.75rem; border: 1px solid #0f0; font-family: 'Courier New', monospace; font-size: 0.75rem; overflow-x: auto; margin: 0;"><code>{
+  "success": true,
+  "message": "Reply received",
+  "from": "6281234567890@s.whatsapp.net",
+  "reply": {
+    "text": "User's reply message",
+    "hasMedia": false,
+    "mediaType": null,
+    "timestamp": "2024-01-15T10:30:00.000Z"
+  }
+}</code></pre>
+                    </div>
+
+                    <!-- Notes -->
+                    <div style="background: #1a1a00; border: 1px solid #ff0; padding: 1rem; border-radius: 4px;">
+                        <div style="color: #ff0; font-weight: bold; margin-bottom: 0.5rem;">📝 Notes:</div>
+                        <ul style="margin: 0; padding-left: 1.5rem; color: #0f0; opacity: 0.9; line-height: 1.6;">
+                            <li>Phone numbers can be with or without @s.whatsapp.net suffix</li>
+                            <li>Bot must be connected and running to send messages</li>
+                            <li>Wait for reply blocks until user responds or timeout (max 300s)</li>
+                            <li>All requests require X-API-Key header with your secret key</li>
+                        </ul>
                     </div>
                 </div>
             </div>

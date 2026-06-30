@@ -485,7 +485,8 @@ function switchTab(tabName, buttonElement) {
         if (firstSubTab) firstSubTab.style.display = 'block';
 
         loadAIDefaults();
-        loadApiConfig();
+        loadProviderConfig();
+        loadBotApiConfig();
         loadModels();
         loadMemory();
         loadWhitelist();
@@ -886,8 +887,8 @@ async function loadModels() {
     }
 }
 
-// Load API configuration
-async function loadApiConfig() {
+// Load Provider API configuration (formerly API Config)
+async function loadProviderConfig() {
     try {
         const response = await fetch('/api/ai-settings/api-config', {
             credentials: 'same-origin'
@@ -931,10 +932,53 @@ async function loadApiConfig() {
             document.getElementById('apiTimeout').textContent = 'Error loading';
         }
     } catch (error) {
-        console.error('Error loading API config:', error);
+        console.error('Error loading Provider config:', error);
         document.getElementById('apiEndpoint').textContent = 'Error loading';
         document.getElementById('apiKey').textContent = 'Error loading';
         document.getElementById('apiTimeout').textContent = 'Error loading';
+    }
+}
+
+// Load Bot API access configuration
+async function loadBotApiConfig() {
+    try {
+        // Fetch bot API key from server
+        const response = await fetch('/api/bot-api-config', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            // Display API key
+            document.getElementById('botApiKey').textContent = data.apiKey || '(Not configured in .env)';
+
+            // Display endpoint
+            document.getElementById('botApiEndpoint').textContent = data.endpoint;
+        } else {
+            document.getElementById('botApiKey').textContent = 'Error loading';
+            document.getElementById('botApiEndpoint').textContent = 'Error loading';
+        }
+    } catch (error) {
+        console.error('Error loading Bot API config:', error);
+        document.getElementById('botApiKey').textContent = 'Error loading';
+        document.getElementById('botApiEndpoint').textContent = 'Error loading';
+    }
+}
+
+// Copy bot API key to clipboard
+async function copyBotApiKey() {
+    const apiKey = document.getElementById('botApiKey').textContent;
+
+    if (apiKey === 'Loading...' || apiKey === 'Error loading' || apiKey === '(Not configured in .env)') {
+        await showAlert('Error', 'No valid API key to copy');
+        return;
+    }
+
+    try {
+        await navigator.clipboard.writeText(apiKey);
+        await showAlert('Success', 'API key copied to clipboard!');
+    } catch (error) {
+        await showAlert('Error', 'Failed to copy: ' + error.message);
     }
 }
 
@@ -986,7 +1030,7 @@ async function revertApiConfig() {
         const data = await response.json();
 
         if (data.success) {
-            loadApiConfig();
+            loadProviderConfig();
             await showAlert('Success', 'Reverted to .env configuration');
         } else {
             await showAlert('Error', 'Failed to revert: ' + data.error);
@@ -2286,7 +2330,8 @@ function restoreTabFromURL() {
             loadScheduledTasks();
         } else if (mainTab === 'ai-settings') {
             loadAIDefaults();
-            loadApiConfig();
+            loadProviderConfig();
+            loadBotApiConfig();
             loadModels();
             loadMemory();
             loadWhitelist();
@@ -2680,7 +2725,7 @@ document.getElementById('editApiConfigSubmit').addEventListener('click', async (
 
         if (data.success) {
             document.getElementById('editApiConfigModal').close();
-            loadApiConfig();
+            loadProviderConfig();
             await showAlert('Success', 'API configuration updated successfully!');
         } else {
             await showAlert('Error', 'Failed to update API config: ' + data.error);

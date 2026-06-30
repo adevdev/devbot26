@@ -1219,6 +1219,25 @@ class BotDashboard {
             }
         });
 
+        // API: Get bot API configuration (for external API access)
+        this.app.get('/api/bot-api-config', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const apiKey = process.env.BOT_API_SECRET || null;
+                const protocol = req.protocol;
+                const host = req.get('host');
+                const endpoint = `${protocol}://${host}`;
+
+                res.json({
+                    success: true,
+                    apiKey: apiKey,
+                    endpoint: endpoint
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get bot API config: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // API: Update API configuration
         this.app.put('/api/ai-settings/api-config', this.requireAuth.bind(this), async (req, res) => {
             try {
