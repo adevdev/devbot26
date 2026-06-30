@@ -2,6 +2,19 @@ const fs = require('fs').promises;
 const path = require('path');
 const storageHelper = require('./storageHelper');
 
+// Get cache invalidator (lazy load to avoid circular dependency)
+let invalidateRoomCache = null;
+function getInvalidator() {
+    if (!invalidateRoomCache) {
+        try {
+            invalidateRoomCache = require('./index').invalidateRoomCache;
+        } catch (e) {
+            // Index not loaded yet, skip invalidation
+        }
+    }
+    return invalidateRoomCache;
+}
+
 /**
  * Room/Group Management
  * Controls bot behavior per room (AI access, commands, etc.)
@@ -164,6 +177,10 @@ class RoomManager {
             await this.saveToFile();
         }
 
+        // Invalidate cache
+        const invalidator = getInvalidator();
+        if (invalidator) invalidator(roomId);
+
         const roomType = isGroup ? 'group' : 'private';
         console.log(`[Room Manager] Auto-created ${roomType}: ${roomId} (Commands: enabled)`);
         return room;
@@ -219,6 +236,10 @@ class RoomManager {
             await this.saveToFile();
         }
 
+        // Invalidate cache
+        const invalidator = getInvalidator();
+        if (invalidator) invalidator(roomId);
+
         console.log(`[Room Manager] Added room: ${roomId} (AI: ${room.allowAI}, AI Cmd: ${room.allowAiCommand}, Commands: ${room.allowCommands}, Ignore: ${room.ignoreAll})`);
         return room;
     }
@@ -250,6 +271,8 @@ class RoomManager {
 
         // Invalidate cache so next getRoomSettings() loads fresh data
         this.lastSync = 0;
+        const invalidator = getInvalidator();
+        if (invalidator) invalidator(roomId);
 
         console.log(`[Room Manager] Updated room: ${roomId}`);
         return room;
@@ -277,6 +300,10 @@ class RoomManager {
         } else {
             await this.saveToFile();
         }
+
+        // Invalidate cache
+        const invalidator = getInvalidator();
+        if (invalidator) invalidator(roomId);
 
         console.log(`[Room Manager] Removed room: ${roomId}`);
         return true;

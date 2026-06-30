@@ -210,6 +210,7 @@ module.exports = {
         let prompt = '';
         let imageBuffer = null;
         let imageType = null;
+        let pdfContent = null; // Store extracted PDF content
 
         // Check for image in quoted message
         if (quotedMsg && quotedMsg.isMedia && quotedMsg.type === 'image') {
@@ -220,6 +221,60 @@ module.exports = {
         if (!imageBuffer && message.isMedia && message.type === 'image') {
             imageBuffer = await message.downloadMedia();
             imageType = message.mimetype || 'image/jpeg';
+        }
+
+        // Check for PDF document in quoted message or message itself
+        let pdfFilePath = null; // Store path to saved PDF for tool calling
+
+        // Debug logging for media detection
+        console.log('[AI] Message media check:', {
+            isMedia: message.isMedia,
+            type: message.type,
+            mimetype: message.mimetype
+        });
+        if (quotedMsg) {
+            console.log('[AI] Quoted message media check:', {
+                isMedia: quotedMsg.isMedia,
+                type: quotedMsg.type,
+                mimetype: quotedMsg.mimetype
+            });
+        }
+
+        let pdfMessage = null;
+        if (quotedMsg && quotedMsg.isMedia &&
+            (quotedMsg.mimetype === 'application/pdf' || quotedMsg.type === 'document')) {
+            pdfMessage = quotedMsg;
+            console.log('[AI] PDF detected in quoted message');
+        } else if (message.isMedia &&
+                   (message.mimetype === 'application/pdf' || message.type === 'document')) {
+            pdfMessage = message;
+            console.log('[AI] PDF detected in current message');
+        }
+
+        // Save PDF to temp file if found (AI will use read_pdf tool to extract)
+        if (pdfMessage) {
+            try {
+                console.log('[AI] PDF document detected, saving to temp...');
+                const fs = require('fs');
+                const path = require('path');
+
+                // Download PDF
+                const pdfBuffer = await pdfMessage.downloadMedia();
+
+                // Save to temp file
+                const tempDir = path.join(__dirname, '../temp');
+                if (!fs.existsSync(tempDir)) {
+                    fs.mkdirSync(tempDir, { recursive: true });
+                }
+                pdfFilePath = path.join(tempDir, `pdf_${Date.now()}.pdf`);
+                fs.writeFileSync(pdfFilePath, pdfBuffer);
+
+                console.log(`[AI] PDF saved to: ${pdfFilePath}`);
+
+            } catch (error) {
+                console.error('[AI] Failed to save PDF:', error.message);
+                pdfFilePath = null;
+            }
         }
 
         // Auto-switch to vision-capable model if user's model doesn't support it
@@ -240,8 +295,33 @@ module.exports = {
             }
         }
 
-        if (quotedMsg && quotedMsg.text) {
-            // If replying to a message, include quoted text first
+        // Build prompt with PDF file reference, quoted message, and user's message
+        if (pdfFilePath) {
+            // PDF found - explicitly instruct AI to use read_pdf tool first
+            const userText = command.parameters.join(' ') || '';
+
+            let pdfInstruction = `A PDF document has been uploaded and saved to: ${pdfFilePath}\n\n` +
+                               `IMPORTANT: You must first use the read_pdf tool to read this document before responding. ` +
+                               `The file path is: ${pdfFilePath}\n\n`;
+
+            if (quotedMsg && quotedMsg.text) {
+                // PDF + quoted message + user text
+                if (userText) {
+                    prompt = pdfInstruction + `Quoted Message: ${quotedMsg.text}\n\nUser Request: ${userText}`;
+                } else {
+                    prompt = pdfInstruction + `Quoted Message: ${quotedMsg.text}`;
+                }
+            } else {
+                // PDF + user text (most common: PDF with caption)
+                if (userText) {
+                    prompt = pdfInstruction + `User Request: ${userText}`;
+                } else {
+                    // Just PDF, no instructions
+                    prompt = pdfInstruction + `Please read this PDF document using the read_pdf tool and provide a summary of its contents.`;
+                }
+            }
+        } else if (quotedMsg && quotedMsg.text) {
+            // No PDF - original logic for quoted messages
             const userText = command.parameters.join(' ') || '';
 
             if (userText) {
@@ -252,7 +332,7 @@ module.exports = {
                 prompt = quotedMsg.text;
             }
         } else {
-            // No quoted message, just use parameters
+            // No PDF, no quoted message - just use parameters
             prompt = command.parameters.join(' ') || '';
         }
 
@@ -266,7 +346,8 @@ module.exports = {
                    '`.ai <your question>`\n' +
                    'or reply to a message with `.ai`\n' +
                    'or reply to a message with `.ai <your comment>`\n' +
-                   'or send/reply to an image with `.ai`';
+                   'or send/reply to an image with `.ai`\n' +
+                   'or send a PDF document with caption (private chat only, no prefix needed)';
         }
 
         // Get API configuration from settings (with env fallback)
@@ -283,7 +364,7 @@ module.exports = {
         try {
             // Call AI API with tool support
             console.log(`[AI] Starting API call (model: ${userModel}, endpoint: ${API_ENDPOINT})`);
-            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message, group, workingIdentifier);
+            const response = await callAIAPIWithTools(prompt, userModel, API_KEY, API_ENDPOINT, message.room, imageBuffer, imageType, message, group, workingIdentifier, pdfFilePath);
 
             stopTyping();
 
@@ -311,6 +392,19 @@ module.exports = {
             stopTyping();
             console.error('[AI] Error:', error.message);
             return `*AI Error:*\n${error.message}`;
+        } finally {
+            // Cleanup temp PDF file if exists
+            if (pdfFilePath) {
+                try {
+                    const fs = require('fs');
+                    if (fs.existsSync(pdfFilePath)) {
+                        fs.unlinkSync(pdfFilePath);
+                        console.log(`[AI] Cleaned up temp PDF: ${pdfFilePath}`);
+                    }
+                } catch (cleanupError) {
+                    console.warn('[AI] Failed to cleanup temp PDF:', cleanupError.message);
+                }
+            }
         }
     },
     options: {
@@ -322,7 +416,7 @@ module.exports = {
 };
 
 // Call AI API with tool support (multi-turn)
-async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null, workingIdentifier = null) {
+async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, imageBuffer = null, imageType = null, userMessage = null, group = null, workingIdentifier = null, pdfFilePath = null) {
     // Get bot instance for context
     const bot = require('wachan');
 

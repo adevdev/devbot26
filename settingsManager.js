@@ -19,7 +19,7 @@ class SettingsManager {
             defaultQuota: 30,
             defaultResetPeriod: 'perDay',
             defaultVisionModel: null, // Must be set by user
-            defaultEnabledTools: ['web_search', 'fetch_url', 'get_time', 'image_search', 'send_message', 'send_image', 'send_document', 'create_pdf', 'edit_pdf', 'download_media'], // Default tools enabled for new users
+            defaultEnabledTools: ['web_search', 'fetch_url', 'get_time', 'image_search', 'send_message', 'send_image', 'send_document', 'create_pdf', 'read_pdf', 'download_media'], // Default tools enabled for new users
             enabledSystemPrompts: [], // Empty array = all enabled, otherwise list of enabled module names
             whitelistMode: 'strict', // 'strict' = only whitelisted, 'auto' = auto-add new users
             aiIdentity: 'You are DevBot26, an AI assistant responding via WhatsApp.', // Customizable AI identity/personality

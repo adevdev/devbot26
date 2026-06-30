@@ -111,6 +111,10 @@ const messageCache = new Map(); // Map<messageId, expiryTimestamp>
 const MESSAGE_CACHE_TTL = 60000; // 60 seconds
 const MESSAGE_CACHE_CLEANUP_INTERVAL = 60000; // Cleanup every 60 seconds
 
+// Room settings cache - avoid DB hit on every message
+const roomCache = new Map(); // Map<roomId, {settings, expiryTime}>
+const ROOM_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 // Cleanup expired messages from cache
 function cleanupMessageCache() {
     const now = Date.now();
@@ -128,8 +132,63 @@ function cleanupMessageCache() {
     }
 }
 
-// Start cleanup interval
+// Cleanup expired room cache
+function cleanupRoomCache() {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [roomId, data] of roomCache.entries()) {
+        if (now > data.expiryTime) {
+            roomCache.delete(roomId);
+            cleaned++;
+        }
+    }
+
+    if (cleaned > 0) {
+        console.log(`[Cache] Cleaned ${cleaned} expired room(s), current size: ${roomCache.size}`);
+    }
+}
+
+// Get room settings with cache
+async function getCachedRoomSettings(roomId, roomName = null, isGroup = false) {
+    const now = Date.now();
+    const cached = roomCache.get(roomId);
+
+    // Return cached if valid
+    if (cached && now < cached.expiryTime) {
+        return cached.settings;
+    }
+
+    // Fetch from DB
+    const roomManager = require('./roomManager');
+    let settings = await roomManager.getRoomSettings(roomId);
+
+    // Auto-create if not exists
+    if (!settings) {
+        settings = await roomManager.getOrCreateRoom(roomId, roomName, isGroup);
+    }
+
+    // Cache it
+    roomCache.set(roomId, {
+        settings,
+        expiryTime: now + ROOM_CACHE_TTL
+    });
+
+    return settings;
+}
+
+// Invalidate room cache (call after updating room settings)
+function invalidateRoomCache(roomId) {
+    if (roomId) {
+        roomCache.delete(roomId);
+    } else {
+        roomCache.clear(); // Clear all if no specific roomId
+    }
+}
+
+// Start cleanup intervals
 setInterval(cleanupMessageCache, MESSAGE_CACHE_CLEANUP_INTERVAL);
+setInterval(cleanupRoomCache, ROOM_CACHE_TTL); // Cleanup room cache every 5min
 
 // Safe JSON stringify with circular reference handling
 function safeStringify(obj, maxLength = 1000) {
@@ -260,35 +319,29 @@ commands.beforeEach(async (context, next) => {
     const { message, group, command } = context;
     const roomManager = require('./roomManager');
     const roomId = message.room;
+    const isGroup = !!group;
 
-    // Get room settings
-    let roomSettings = await roomManager.getRoomSettings(roomId);
-
-    // If no settings yet, create with defaults
-    if (!roomSettings) {
-        let roomName = null;
-        const isGroup = !!group;
-
-        if (isGroup && group.subject) {
-            roomName = group.subject;
-        } else if (!isGroup) {
-            try {
-                const wachan = require('wachan');
-                const userData = await wachan.getUserData(message.sender.id);
-                if (userData && userData.pushName) {
-                    roomName = userData.pushName;
-                }
-            } catch (e) {
-                roomName = message.sender.id;
+    // Get room name for cache key
+    let roomName = null;
+    if (isGroup && group.subject) {
+        roomName = group.subject;
+    } else if (!isGroup) {
+        try {
+            const wachan = require('wachan');
+            const userData = await wachan.getUserData(message.sender.id);
+            if (userData && userData.pushName) {
+                roomName = userData.pushName;
             }
+        } catch (e) {
+            roomName = message.sender.id;
         }
-
-        roomSettings = await roomManager.getOrCreateRoom(roomId, roomName, isGroup);
     }
+
+    // Get cached room settings
+    const roomSettings = await getCachedRoomSettings(roomId, roomName, isGroup);
 
     // Check if room is ignored
     if (roomSettings.ignoreAll) {
-        // Silent ignore - don't process command
         return;
     }
 
@@ -297,7 +350,6 @@ commands.beforeEach(async (context, next) => {
     const allowed = await roomManager.isCommandAllowed(roomId, commandName);
 
     if (!allowed) {
-        // Command not allowed - silently ignore
         return;
     }
 
@@ -311,39 +363,30 @@ commands.beforeEach(async (context, next) => {
 // Owner-only command check
 wachan.onReceive(wachan.messageType.any, async (context, next) => {
     const { message, group } = context;
-    const roomManager = require('./roomManager');
     const roomId = message.room;
+    const isGroup = !!group;
 
-    // Get or auto-create room settings with defaults (for both groups and private)
-    let roomSettings = await roomManager.getRoomSettings(roomId);
-
-    if (!roomSettings) {
-        // Auto-create with name if available
-        let roomName = null;
-        const isGroup = !!group;
-
-        if (isGroup && group.subject) {
-            roomName = group.subject;
-        } else if (!isGroup) {
-            // For private chat, try to get contact name
-            try {
-                const wachan = require('wachan');
-                const userData = await wachan.getUserData(message.sender.id);
-                if (userData && userData.pushName) {
-                    roomName = userData.pushName;
-                }
-            } catch (e) {
-                // Use sender id as fallback
-                roomName = message.sender.id;
+    // Get room name for cache
+    let roomName = null;
+    if (isGroup && group.subject) {
+        roomName = group.subject;
+    } else if (!isGroup) {
+        try {
+            const wachan = require('wachan');
+            const userData = await wachan.getUserData(message.sender.id);
+            if (userData && userData.pushName) {
+                roomName = userData.pushName;
             }
+        } catch (e) {
+            roomName = message.sender.id;
         }
-
-        roomSettings = await roomManager.getOrCreateRoom(roomId, roomName, isGroup);
     }
+
+    // Get cached room settings
+    const roomSettings = await getCachedRoomSettings(roomId, roomName, isGroup);
 
     // Check if bot should ignore this room entirely
     if (roomSettings.ignoreAll) {
-        // Silent ignore - don't process anything
         return;
     }
 
@@ -1115,4 +1158,4 @@ async function initBot() {
 }
 
 // Export dashboard for tools that need to access activeWaitSessions
-module.exports = { dashboard };
+module.exports = { dashboard, invalidateRoomCache };
