@@ -651,56 +651,15 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                     message: userMessage,
                     room: roomJid,
                     group: group || null,
-                    workingIdentifier: workingIdentifier
+                    workingIdentifier: workingIdentifier,
+                    progressMsg: progressMsg // Pass progress message for real-time updates
                 };
 
                 // Execute tool with context
                 toolResult = await tools.executeTool(toolUse.name, toolUse.input, toolContext);
 
-                // Check if tool has special result type (e.g., image)
-                const toolMetadata = tools.getMetadata(toolUse.name);
-
-                if (toolMetadata && toolMetadata.resultType === 'image') {
-                    // Handle image result type
-                    const apiData = JSON.parse(toolResult);
-
-                    if (apiData.success && apiData.images && apiData.images.length > 0) {
-                        // Download first image
-                        console.log('[AI] Downloading image:', apiData.images[0]);
-                        const axios = require('axios');
-                        const imageResponse = await axios.get(apiData.images[0], { responseType: 'arraybuffer' });
-                        const imageBuffer = Buffer.from(imageResponse.data);
-
-                        // Generate 5% thumbnail to prevent baileys sharp crash
-                        const thumbnail = await generateThumbnail(imageBuffer);
-
-                        // Send directly via baileys to include jpegThumbnail (wachan doesn't support it)
-                        const bot = require('wachan');
-                        const sock = bot.getSocket();
-
-                        // Send with quoted progress message
-                        const imageOptions = {
-                            image: imageBuffer,
-                            jpegThumbnail: thumbnail
-                        };
-                        if (progressMsg) {
-                            imageOptions.quoted = progressMsg.toBaileys();
-                        }
-
-                        await sock.sendMessage(roomJid, imageOptions);
-
-                        // Return null to prevent wachan from sending again
-                        imageSearchResult = { handled: true };
-
-                        // Don't continue with other tools
-                        break;
-                    } else {
-                        toolResult = JSON.stringify({
-                            error: apiData.error || 'No images found',
-                            query: toolUse.input.query
-                        });
-                    }
-                }
+                // No immediate handling - let AI process all tool results
+                // Images will be handled in Path 2 (post-processing) after AI generates response
 
             } catch (error) {
                 console.error(`[AI] Tool execution failed (${toolUse.name}):`, error.message);
@@ -721,6 +680,29 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
         // If image was found and sent, return null (already sent via baileys)
         if (imageSearchResult) {
+            return null;
+        }
+
+        // Check if any tool returned silent mode (background processing)
+        let silentMode = false;
+        for (const result of toolResults) {
+            try {
+                const parsed = JSON.parse(result.content);
+                if (parsed.silent === true) {
+                    silentMode = true;
+                    console.log('[AI] Silent mode detected - skipping text generation');
+                    break;
+                }
+            } catch (e) {
+                // Not JSON, skip
+            }
+        }
+
+        // If silent mode, keep progress message and return null
+        if (silentMode) {
+            // Progress message will be updated by background polling
+            // Just return null to skip text response
+            console.log('[AI] Silent mode active - background polling will handle response');
             return null;
         }
 
@@ -823,6 +805,7 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     let imageUrls = [];
     let imageToolName = null;
     let imageCaption = null;
+    let preparedImageBuffer = null; // From send_image tool (already downloaded)
 
     // First pass: collect tool names from assistant's tool_use blocks
     const toolsUsed = [];
@@ -836,13 +819,21 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         }
     }
 
-    // Second pass: collect images from tool results
+    // Second pass: collect images/imageBuffer from tool results
     for (const msg of messages) {
         if (msg.role === 'user' && Array.isArray(msg.content)) {
             for (const item of msg.content) {
                 if (item.type === 'tool_result' && item.content) {
                     try {
                         const parsed = JSON.parse(item.content);
+
+                        // Check for prepared imageBuffer (from send_image tool)
+                        if (parsed.imageBuffer && typeof parsed.imageBuffer === 'string') {
+                            preparedImageBuffer = Buffer.from(parsed.imageBuffer, 'base64');
+                            console.log('[AI] Found prepared imageBuffer from send_image tool');
+                        }
+
+                        // Check for image URLs (from generation tools)
                         if (parsed.images && Array.isArray(parsed.images)) {
                             imageUrls.push(...parsed.images);
                             // Track custom caption if provided by tool
@@ -869,8 +860,79 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         }
     }
 
-    // If images found, download first image and send with caption
-    if (imageUrls.length > 0) {
+    // Priority 1: If send_image prepared imageBuffer, use it
+    if (preparedImageBuffer) {
+        try {
+            console.log('[AI] Using prepared imageBuffer from send_image tool');
+
+            // Generate 5% thumbnail to prevent baileys sharp crash
+            const thumbnail = await generateThumbnail(preparedImageBuffer);
+
+            // Send directly via baileys to include jpegThumbnail
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            // Use AI's finalText as caption
+            const imageOptions = {
+                image: preparedImageBuffer,
+                jpegThumbnail: thumbnail,
+                caption: finalText
+            };
+
+            // Quote original user message
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+            await sock.sendMessage(roomJid, imageOptions, quotedOptions);
+
+            // Edit progress message to show tools used
+            if (progressMsg) {
+                try {
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
+                    console.log('[AI] Progress message edited to show tools used');
+                } catch (e) {
+                    console.error('[AI] Failed to edit progress message:', e.message);
+                }
+            }
+
+            // Save to memory
+            await saveToMemory(roomJid, prompt, finalText, model, userMessage, preparedImageBuffer, group);
+
+            // Return null to prevent wachan from sending again
+            return null;
+        } catch (error) {
+            console.error('[AI] Failed to send prepared image:', error.message);
+
+            // Fallback to text
+            const bot = require('wachan');
+            const sock = bot.getSocket();
+
+            const textOptions = {
+                text: finalText + `\n\n_Image unavailable: ${error.message}_`
+            };
+
+            const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+            await sock.sendMessage(roomJid, textOptions, quotedOptions);
+
+            // Edit progress message
+            if (progressMsg) {
+                try {
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
+                } catch (e) {
+                    console.error('[AI] Failed to edit progress message:', e.message);
+                }
+            }
+
+            return null;
+        }
+    }
+
+    // Priority 2: If images found from generation tools (auto-send), download and send
+    if (imageUrls.length > 0 && imageToolName) {
         try {
             console.log('[AI] Downloading image:', imageUrls[0]);
             const axios = require('axios');
@@ -906,13 +968,18 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             await sock.sendMessage(roomJid, imageOptions, quotedOptions);
 
-            // Delete progress message if exists
+            // Edit progress message to show tools used
             if (progressMsg) {
                 try {
-                    await progressMsg.delete();
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
+                    console.log('[AI] Progress message edited to show tools used (Path 2)');
                 } catch (e) {
-                    console.error('[AI] Failed to delete progress message:', e.message);
+                    console.error('[AI] Failed to edit progress message:', e.message);
                 }
+            } else {
+                console.log('[AI] No progressMsg to edit (Path 2)');
             }
 
             // Return null to prevent wachan from sending again
@@ -932,12 +999,14 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             await sock.sendMessage(roomJid, textOptions, quotedOptions);
 
-            // Delete progress message if exists
+            // Edit progress message to show tools used
             if (progressMsg) {
                 try {
-                    await progressMsg.delete();
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
                 } catch (e) {
-                    console.error('[AI] Failed to delete progress message:', e.message);
+                    console.error('[AI] Failed to edit progress message:', e.message);
                 }
             }
 
@@ -998,12 +1067,14 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             await sock.sendMessage(roomJid, documentOptions, quotedOptions);
 
-            // Delete progress message if exists
+            // Edit progress message to show tools used
             if (progressMsg) {
                 try {
-                    await progressMsg.delete();
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
                 } catch (e) {
-                    console.error('[AI] Failed to delete progress message:', e.message);
+                    console.error('[AI] Failed to edit progress message:', e.message);
                 }
             }
 
@@ -1027,12 +1098,14 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             await sock.sendMessage(roomJid, textOptions, quotedOptions);
 
-            // Delete progress message if exists
+            // Edit progress message to show tools used
             if (progressMsg) {
                 try {
-                    await progressMsg.delete();
+                    const uniqueTools = Array.from(new Set(toolsUsed));
+                    const toolsList = uniqueTools.join(', ');
+                    await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
                 } catch (e) {
-                    console.error('[AI] Failed to delete progress message:', e.message);
+                    console.error('[AI] Failed to edit progress message:', e.message);
                 }
             }
 
@@ -1056,11 +1129,13 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
         await sock.sendMessage(roomJid, textOptions, quotedOptions);
 
-        // Delete progress message
+        // Edit progress message to show tools used
         try {
-            await progressMsg.delete();
+            const uniqueTools = Array.from(new Set(toolsUsed));
+            const toolsList = uniqueTools.join(', ');
+            await progressMsg.edit(`🔧 Used tools: ${toolsList}`);
         } catch (error) {
-            console.error('[AI] Failed to delete progress message:', error.message);
+            console.error('[AI] Failed to edit progress message:', error.message);
         }
 
         // Save to memory after successful response

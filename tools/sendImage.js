@@ -40,7 +40,7 @@ module.exports = {
     metadata: {
         icon: '📤',
         progressMessage: (input) => `Sending image...`,
-        resultType: 'image' // Special type for URL-based images (handled by ai.js with thumbnail)
+        resultType: 'action' // Performs action (sends message), doesn't return data for further processing
     },
 
     // Execution logic
@@ -82,9 +82,12 @@ module.exports = {
                 });
             }
 
+            let imageBuffer;
+            let sourceInfo;
+
             // Handle local file path
             if (filePath) {
-                console.log('[SendImage] Sending from local file:', filePath);
+                console.log('[SendImage] Loading from local file:', filePath);
 
                 // Check if file exists
                 if (!fs.existsSync(filePath)) {
@@ -104,31 +107,17 @@ module.exports = {
                 }
 
                 // Read file
-                const buffer = fs.readFileSync(filePath);
-                console.log(`[SendImage] File loaded: ${path.basename(filePath)}, Size: ${buffer.length} bytes`);
-
-                // Send via wachan directly
-                const message = {
-                    image: buffer
-                };
-
-                if (caption) message.caption = caption;
-
-                await wachan.sendMessage(finalTargetJid, message);
-
-                return JSON.stringify({
-                    success: true,
+                imageBuffer = fs.readFileSync(filePath);
+                sourceInfo = {
                     source: 'local',
                     filename: path.basename(filePath),
-                    size: buffer.length,
-                    targetJid: finalTargetJid,
-                    caption: caption || null
-                });
+                    size: imageBuffer.length
+                };
+                console.log(`[SendImage] Loaded: ${path.basename(filePath)}, Size: ${imageBuffer.length} bytes`);
             }
-
-            // Handle URL (existing behavior - let ai.js handle with thumbnail)
-            if (url) {
-                console.log('[SendImage] Preparing to send from URL:', url);
+            // Handle URL
+            else if (url) {
+                console.log('[SendImage] Downloading from URL:', url);
 
                 // Basic URL validation
                 if (typeof url !== 'string') {
@@ -147,19 +136,33 @@ module.exports = {
                     console.warn('[SendImage] URL might not be an image:', url);
                 }
 
-                // Return image URL in the expected format
-                // ai.js will handle downloading and sending with thumbnail
+                // Download image from URL
+                const axios = require('axios');
+                const imageResponse = await axios.get(url, { responseType: 'arraybuffer' });
+                imageBuffer = Buffer.from(imageResponse.data);
+                sourceInfo = {
+                    source: 'url',
+                    url: url,
+                    size: imageBuffer.length
+                };
+                console.log(`[SendImage] Downloaded: Size: ${imageBuffer.length} bytes`);
+            }
+            // Neither url nor filePath provided
+            else {
                 return JSON.stringify({
-                    success: true,
-                    images: [url],
-                    targetJid: finalTargetJid,
-                    caption: caption || null
+                    error: 'Either url or filePath must be provided'
                 });
             }
 
-            // Neither url nor filePath provided
+            // Return image buffer as base64 for ai.js to use
+            const base64Image = imageBuffer.toString('base64');
+
             return JSON.stringify({
-                error: 'Either url or filePath must be provided'
+                success: true,
+                ...sourceInfo,
+                imageBuffer: base64Image, // ai.js will use this to send
+                targetJid: finalTargetJid,
+                requestedCaption: caption || null // AI can override this
             });
 
         } catch (error) {

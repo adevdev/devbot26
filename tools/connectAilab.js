@@ -16,7 +16,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: "connectAilab",
-        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW (keywords: 'bikin', 'buat', 'generate', 'create', 'make'). Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. Do NOT use this if user wants to SEARCH for existing images - use image_search instead. User must have connected their WhatsApp number via AiLab web interface first.",
+        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW (keywords: 'bikin', 'buat', 'generate', 'create', 'make'). Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead. User must have connected their WhatsApp number via AiLab web interface first.",
 
         input_schema: {
             type: "object",
@@ -98,7 +98,7 @@ module.exports = {
     metadata: {
         icon: '🎨',
         progressMessage: (input) => `Connecting to AiLab: _${input.action}_`,
-        resultType: 'text'
+        resultType: 'image' // Tool returns images/videos in JSON format
     },
 
     /**
@@ -166,9 +166,18 @@ module.exports = {
 
                 // Add common parameters
                 if (prompt) requestBody.prompt = prompt;
-                if (aspectRatio) requestBody.aspectRatio = aspectRatio;
-                if (quality) requestBody.quality = quality;
-                if (level) requestBody.level = level;
+
+                // Force optimal settings for t2i mode (512x512, SD quality, moon level)
+                if (mode === 't2i') {
+                    requestBody.aspectRatio = '1:1'; // 512x512 for SD
+                    requestBody.quality = 'sd';       // Standard Definition
+                    requestBody.level = 'moon';       // Fast - Low cost
+                } else {
+                    // For other modes, allow custom settings
+                    if (aspectRatio) requestBody.aspectRatio = aspectRatio;
+                    if (quality) requestBody.quality = quality;
+                    if (level) requestBody.level = level;
+                }
 
                 // Add video-specific parameters
                 if (mode === 't2v' || mode === 'i2v') {
@@ -205,226 +214,227 @@ module.exports = {
                     }
                 });
 
-                if (response.data.success) {
-                    const job = response.data.data;
-                    return `✅ *Generation Job Created*\n\n` +
-                           `🆔 Job ID: ${job.jobId}\n` +
-                           `📊 Status: ${job.status}\n` +
-                           `💰 Cost: ${job.cost} fuel\n` +
-                           `⛽ Remaining Fuel: ${job.remainingFuel}\n` +
-                           `💬 ${job.message}\n\n` +
-                           `Use check_status with jobId to monitor progress.`;
-                } else {
-                    return `❌ Failed to create job: ${response.data.error}`;
+                if (!response.data.success) {
+                    return JSON.stringify({
+                        success: false,
+                        error: response.data.error
+                    });
                 }
+
+                const job = response.data.data;
+                const jobId = job.jobId;
+
+                console.log(`[AiLab] Job created: ${jobId}, starting background polling...`);
+
+                // Start background polling (non-blocking)
+                const progressMsg = context.progressMsg;
+                const roomJid = context.room;
+                const userMessage = context.message;
+                const userPrompt = requestBody.prompt; // Store original prompt for smart caption
+
+                (async () => {
+                    const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
+                    const pollInterval = 5000; // 5 seconds
+                    const startTime = Date.now();
+                    let pollCount = 0;
+                    let lastUpdateTime = 0;
+                    const UPDATE_THROTTLE = 3000;
+
+                    while (Date.now() - startTime < maxWaitTime) {
+                        try {
+                            await new Promise(r => setTimeout(r, pollInterval));
+                            pollCount++;
+
+                            const statusResponse = await axios.get(`${baseUrl}/api/whatsapp/job/${jobId}`, {
+                                headers
+                            });
+
+                            if (!statusResponse.data.success) {
+                                console.error('[AiLab] Failed to get status:', statusResponse.data.error);
+                                continue;
+                            }
+
+                            const currentJob = statusResponse.data.data;
+                            console.log(`[AiLab] Background poll #${pollCount} - Status: ${currentJob.status}`);
+
+                            // Update progress message
+                            if (progressMsg) {
+                                const now = Date.now();
+                                if (now - lastUpdateTime > UPDATE_THROTTLE) {
+                                    try {
+                                        let statusText = 'queue';
+                                        if (currentJob.status === 'processing') statusText = 'generating';
+                                        else if (currentJob.status === 'completed') statusText = 'complete';
+
+                                        await progressMsg.edit(`Generating. . . . ${statusText}`);
+                                        lastUpdateTime = now;
+                                    } catch (e) {
+                                        console.error('[AiLab] Failed to update progress:', e.message);
+                                    }
+                                }
+                            }
+
+                            // Check if completed or failed
+                            if (currentJob.status === 'completed') {
+                                console.log('[AiLab] Generation completed, sending image...');
+
+                                // Send image directly
+                                if (currentJob.output.images && currentJob.output.images.length > 0) {
+                                    try {
+                                        const axios = require('axios');
+                                        const imageResponse = await axios.get(currentJob.output.images[0], {
+                                            responseType: 'arraybuffer'
+                                        });
+                                        const imageBuffer = Buffer.from(imageResponse.data);
+
+                                        // Generate thumbnail with proper Jimp usage
+                                        const { Jimp } = require('jimp');
+                                        const image = await Jimp.read(imageBuffer);
+                                        const thumbnailWidth = Math.max(1, Math.floor(image.bitmap.width * 0.05));
+                                        const thumbnailHeight = Math.max(1, Math.floor(image.bitmap.height * 0.05));
+                                        const resized = await image.resize({ w: thumbnailWidth, h: thumbnailHeight });
+                                        const thumbnail = await resized.getBuffer('image/jpeg');
+
+                                        console.log(`[AiLab] Thumbnail generated: ${thumbnailWidth}x${thumbnailHeight}`);
+
+                                        // Generate smart caption (just describe what was generated)
+                                        const caption = userPrompt || 'Generated image';
+
+                                        // Send via baileys
+                                        const wachan = require('wachan');
+                                        const sock = wachan.getSocket();
+
+                                        const imageOptions = {
+                                            image: imageBuffer,
+                                            jpegThumbnail: thumbnail,
+                                            caption: caption
+                                        };
+
+                                        const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+                                        await sock.sendMessage(roomJid, imageOptions, quotedOptions);
+
+                                        // Update progress message
+                                        if (progressMsg) {
+                                            try {
+                                                await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                            } catch (e) {
+                                                console.error('[AiLab] Failed to update final progress:', e.message);
+                                            }
+                                        }
+
+                                        console.log('[AiLab] Image sent successfully');
+                                    } catch (error) {
+                                        console.error('[AiLab] Failed to send image:', error.message);
+
+                                        // Fallback: send error text
+                                        const wachan = require('wachan');
+                                        const sock = wachan.getSocket();
+                                        await sock.sendMessage(roomJid, {
+                                            text: `Gagal mengirim gambar: ${error.message}`
+                                        });
+                                    }
+                                }
+
+                                break; // Exit loop
+                            } else if (currentJob.status === 'failed') {
+                                console.log('[AiLab] Generation failed');
+
+                                // Send failure notification
+                                const wachan = require('wachan');
+                                const sock = wachan.getSocket();
+                                await sock.sendMessage(roomJid, {
+                                    text: `❌ Gagal generate gambar: ${currentJob.error || 'Unknown error'}`
+                                });
+
+                                // Update progress message
+                                if (progressMsg) {
+                                    try {
+                                        await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                    } catch (e) {
+                                        console.error('[AiLab] Failed to update progress:', e.message);
+                                    }
+                                }
+
+                                break; // Exit loop
+                            }
+
+                        } catch (error) {
+                            console.error('[AiLab] Background polling error:', error.message);
+                        }
+                    }
+
+                    // Timeout handling
+                    if (Date.now() - startTime >= maxWaitTime) {
+                        console.log('[AiLab] Background polling timeout');
+                        const wachan = require('wachan');
+                        const sock = wachan.getSocket();
+                        await sock.sendMessage(roomJid, {
+                            text: `⏱️ *Generation Timeout*\n\nJob ${jobId} exceeded 10 minutes.\nUse check_status to manually check.`
+                        });
+                    }
+                })();
+
+                // Return immediately to AI (don't wait for polling)
+                // silent: true = don't generate text response, just keep progress message
+                return JSON.stringify({
+                    success: true,
+                    jobId: job.jobId,
+                    status: 'pending',
+                    silent: true,
+                    message: 'Generation started. Background polling will send result automatically.'
+                });
             }
 
             // ===== ACTION: Check Status =====
             if (action === 'check_status') {
                 if (!jobId) {
-                    return `❌ Error: 'jobId' is required for check_status action`;
+                    return JSON.stringify({
+                        success: false,
+                        error: 'jobId is required for check_status action'
+                    });
                 }
 
-                // Subscribe to SSE for real-time updates
-                console.log(`[AiLab] Subscribing to SSE for job: ${jobId}`);
+                console.log(`[AiLab] Checking job status: ${jobId}`);
 
-                return new Promise(async (resolve, reject) => {
-                    let completed = false;
-                    let lastProgress = null;
-                    const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
-                    const startTime = Date.now();
-
-                    // Try SSE first
-                    try {
-                        const EventSource = require('eventsource');
-                        const sseUrl = `${baseUrl}/api/sse?jobId=${jobId}`;
-                        const eventSource = new EventSource(sseUrl);
-
-                        console.log(`[AiLab] SSE connected: ${sseUrl}`);
-
-                        // Connection established
-                        eventSource.addEventListener('connected', (event) => {
-                            console.log('[AiLab] SSE connection established');
-                        });
-
-                        // Job queued
-                        eventSource.addEventListener('status', (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                console.log(`[AiLab] Status: ${data.status} - ${data.message || ''}`);
-                            } catch (e) {
-                                console.error('[AiLab] SSE status parse error:', e);
-                            }
-                        });
-
-                        // Execution progress
-                        eventSource.addEventListener('executing', (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                console.log(`[AiLab] Executing: Node ${data.node} - ${data.nodeTitle}`);
-                            } catch (e) {
-                                console.error('[AiLab] SSE executing parse error:', e);
-                            }
-                        });
-
-                        // Sampling progress
-                        eventSource.addEventListener('progress', (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                lastProgress = data;
-                                console.log(`[AiLab] Progress: ${data.step}/${data.total} (${data.percentage}%)`);
-                            } catch (e) {
-                                console.error('[AiLab] SSE progress parse error:', e);
-                            }
-                        });
-
-                        // Job completed
-                        eventSource.addEventListener('done', (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                console.log('[AiLab] Job completed!');
-
-                                eventSource.close();
-                                completed = true;
-
-                                let result = `✅ *Generation Completed*\n\n` +
-                                            `🆔 Job ID: ${jobId}\n` +
-                                            `📊 Status: ${data.status}\n\n`;
-
-                                if (data.output.images && data.output.images.length > 0) {
-                                    result += `🖼️ *Images:*\n`;
-                                    data.output.images.forEach((img, i) => {
-                                        result += `${i + 1}. ${img}\n`;
-                                    });
-                                }
-
-                                if (data.output.videos && data.output.videos.length > 0) {
-                                    result += `🎥 *Videos:*\n`;
-                                    data.output.videos.forEach((vid, i) => {
-                                        result += `${i + 1}. ${vid}\n`;
-                                    });
-                                }
-
-                                resolve(result);
-                            } catch (e) {
-                                console.error('[AiLab] SSE done parse error:', e);
-                                eventSource.close();
-                                reject(new Error('Failed to parse completion data'));
-                            }
-                        });
-
-                        // Job failed
-                        eventSource.addEventListener('error', (event) => {
-                            try {
-                                const data = JSON.parse(event.data);
-                                console.log(`[AiLab] Job failed: ${data.error}`);
-
-                                eventSource.close();
-                                completed = true;
-
-                                resolve(`❌ *Generation Failed*\n\n` +
-                                       `🆔 Job ID: ${jobId}\n` +
-                                       `📊 Status: ${data.status}\n` +
-                                       `⚠️ Error: ${data.error}`);
-                            } catch (e) {
-                                // SSE connection error (not job error)
-                                console.error('[AiLab] SSE connection error, falling back to polling');
-                                eventSource.close();
-
-                                // Fall back to polling
-                                pollJobStatus();
-                            }
-                        });
-
-                        // Timeout handler
-                        const timeout = setTimeout(() => {
-                            if (!completed) {
-                                console.log('[AiLab] SSE timeout, closing connection');
-                                eventSource.close();
-                                resolve(`⏱️ *Timeout*\n\nJob ${jobId} exceeded maximum wait time (10 minutes).\n\nPlease check status again later.`);
-                            }
-                        }, maxWaitTime);
-
-                    } catch (sseError) {
-                        console.error('[AiLab] SSE failed, falling back to polling:', sseError.message);
-                        // Fall back to polling
-                        pollJobStatus();
-                    }
-
-                    // Polling fallback function
-                    async function pollJobStatus() {
-                        const pollInterval = 10000; // 10 seconds
-
-                        while (!completed && Date.now() - startTime < maxWaitTime) {
-                            try {
-                                const response = await axios.get(`${baseUrl}/api/whatsapp/job/${jobId}`, {
-                                    headers
-                                });
-
-                                if (response.data.success) {
-                                    const job = response.data.data;
-                                    console.log(`[AiLab] Polling status: ${job.status}`);
-
-                                    if (job.status === 'completed') {
-                                        completed = true;
-
-                                        let result = `✅ *Generation Completed*\n\n` +
-                                                    `🆔 Job ID: ${job.jobId}\n` +
-                                                    `🎨 Mode: ${job.mode}\n` +
-                                                    `💎 Quality: ${job.quality}\n` +
-                                                    `💰 Cost: ${job.cost} fuel\n` +
-                                                    `⏰ Created: ${new Date(job.createdAt).toLocaleString()}\n` +
-                                                    `✅ Completed: ${new Date(job.completedAt).toLocaleString()}\n\n`;
-
-                                        if (job.output.images && job.output.images.length > 0) {
-                                            result += `🖼️ *Images:*\n`;
-                                            job.output.images.forEach((img, i) => {
-                                                result += `${i + 1}. ${img}\n`;
-                                            });
-                                        }
-
-                                        if (job.output.videos && job.output.videos.length > 0) {
-                                            result += `🎥 *Videos:*\n`;
-                                            job.output.videos.forEach((vid, i) => {
-                                                result += `${i + 1}. ${vid}\n`;
-                                            });
-                                        }
-
-                                        resolve(result);
-                                        return;
-                                    } else if (job.status === 'failed') {
-                                        completed = true;
-                                        resolve(`❌ *Generation Failed*\n\n` +
-                                               `🆔 Job ID: ${job.jobId}\n` +
-                                               `📊 Status: ${job.status}\n` +
-                                               `⚠️ Error: ${job.error}`);
-                                        return;
-                                    } else if (job.status === 'cancelled') {
-                                        completed = true;
-                                        resolve(`🚫 *Generation Cancelled*\n\n` +
-                                               `🆔 Job ID: ${job.jobId}\n` +
-                                               `📊 Status: ${job.status}`);
-                                        return;
-                                    }
-
-                                    // Still processing, continue polling
-                                    await new Promise(r => setTimeout(r, pollInterval));
-                                } else {
-                                    reject(new Error(response.data.error));
-                                    return;
-                                }
-                            } catch (error) {
-                                reject(error);
-                                return;
-                            }
-                        }
-
-                        // Timeout
-                        if (!completed) {
-                            resolve(`⏱️ *Timeout*\n\nJob ${jobId} exceeded maximum wait time (10 minutes).\n\nPlease check status again later.`);
-                        }
-                    }
+                const response = await axios.get(`${baseUrl}/api/whatsapp/job/${jobId}`, {
+                    headers
                 });
+
+                if (!response.data.success) {
+                    return JSON.stringify({
+                        success: false,
+                        error: response.data.error
+                    });
+                }
+
+                const job = response.data.data;
+                console.log(`[AiLab] Job status: ${job.status}`);
+
+                // Return current status
+                const result = {
+                    success: true,
+                    jobId: job.jobId,
+                    status: job.status
+                };
+
+                // If completed, include output
+                if (job.status === 'completed') {
+                    if (job.output.images && job.output.images.length > 0) {
+                        result.images = job.output.images;
+                    }
+                    if (job.output.videos && job.output.videos.length > 0) {
+                        result.videos = job.output.videos;
+                    }
+                    result.caption = `✅ Generation Completed!\n🆔 Job ID: ${job.jobId}`;
+                }
+
+                // If failed, include error
+                if (job.status === 'failed') {
+                    result.error = job.error;
+                }
+
+                return JSON.stringify(result);
             }
 
             // ===== ACTION: List Jobs =====
