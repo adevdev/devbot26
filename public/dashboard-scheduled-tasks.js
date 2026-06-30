@@ -137,7 +137,8 @@ function formatTimeUntil(ms) {
 }
 
 async function cancelScheduledTask(taskId) {
-    if (!confirm('Cancel this scheduled task?')) {
+    const confirmed = await showConfirm('Cancel Scheduled Task', 'Cancel this scheduled task?');
+    if (!confirmed) {
         return;
     }
 

@@ -157,18 +157,38 @@ function updateButtons(status, hasPhone = false, authenticated = false) {
 
 // Socket events
 socket.on('init', (data) => {
+    // Set authentication status FIRST before anything else
+    isAuthenticated = data.authenticated;
+
     updateButtons(data.status, data.hasPhone, data.authenticated);
-    if (data.logs && data.logs.length > 0) {
-        data.logs.forEach(log => {
-            writeLine(formatLog(log));
-        });
+
+    // Hide terminal and show login prompt if not authenticated
+    if (!data.authenticated) {
+        // Clear terminal and show login required message (ASCII only)
+        term.clear();
+        term.write('\r\n');
+        term.write('\x1b[1;33m============================================================\x1b[0m\r\n');
+        term.write('\r\n');
+        term.write('\x1b[1;32m           AUTHENTICATION REQUIRED\x1b[0m\r\n');
+        term.write('\r\n');
+        term.write('  Please login to access the dashboard and view logs.\r\n');
+        term.write('\r\n');
+        term.write('  Click the \x1b[1;32m[Login]\x1b[0m button in the top right corner.\r\n');
+        term.write('\r\n');
+        term.write('\x1b[1;33m============================================================\x1b[0m\r\n');
+        term.write('\r\n');
+    } else {
+        // Authenticated - show logs
+        if (data.logs && data.logs.length > 0) {
+            data.logs.forEach(log => {
+                writeLine(formatLog(log));
+            });
+        }
     }
 
-    // Restore tab from URL after auth is confirmed
-    // This ensures isAuthenticated is set before trying to switch tabs
-    setTimeout(() => {
-        restoreTabFromURL();
-    }, 50);
+    // Restore tab from URL immediately after auth status is set
+    // No timeout needed - isAuthenticated is already set above
+    restoreTabFromURL();
 });
 
 socket.on('log', (log) => {
@@ -2314,6 +2334,10 @@ function restoreTabFromURL() {
             // Check auth first
             if (!isAuthenticated) {
                 console.log('[Tab Restore] Authentication required for', mainTab);
+                // Show unauthorized alert and prompt login
+                showAlert('Unauthorized', 'Please login to access this section.').then(() => {
+                    showLoginModal();
+                });
                 return;
             }
         }
