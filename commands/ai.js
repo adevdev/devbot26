@@ -127,18 +127,25 @@ module.exports = {
                         console.warn(`[AI] Could not get user data, using message sender info:`, userDataError.message);
                     }
 
-                    await whitelistManager.addNumber(
-                        jidToStore,
-                        defaultModel,
-                        pushName,
-                        defaultQuota,
-                        defaultResetPeriod
-                    );
-                    console.log(`[AI] Auto-added ${jidToStore}: ${defaultModel}, ${defaultQuota}/${defaultResetPeriod}${pushName ? ` (${pushName})` : ''}`);
+                    // Try to add user with error handling
+                    try {
+                        await whitelistManager.addNumber(
+                            jidToStore,
+                            defaultModel,
+                            pushName,
+                            defaultQuota,
+                            defaultResetPeriod
+                        );
+                        console.log(`[AI] Auto-added ${jidToStore}: ${defaultModel}, ${defaultQuota}/${defaultResetPeriod}${pushName ? ` (${pushName})` : ''}`);
 
-                    // Important: Set workingIdentifier immediately after auto-add
-                    // This ensures quota check uses the same identifier we just added
-                    workingIdentifier = jidToStore;
+                        // Important: Set workingIdentifier immediately after successful auto-add
+                        // This ensures quota check uses the same identifier we just added
+                        workingIdentifier = jidToStore;
+                    } catch (autoAddError) {
+                        console.error(`[AI] Auto-add failed for ${jidToStore}:`, autoAddError.message);
+                        return '*Error:* Auto-add to whitelist failed. Please try again or contact admin.\n\n' +
+                               `_Technical details: ${autoAddError.message}_`;
+                    }
                 }
             }
         }
