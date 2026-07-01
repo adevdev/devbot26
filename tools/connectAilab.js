@@ -181,10 +181,8 @@ module.exports = {
                             fuel: user.fuel,
                             phone: user.whatsappPhone
                         });
-
-                        if (user.fuel < 10) {
-                            return `⛽ *Low Fuel Warning*\n\nCurrent fuel: ${user.fuel}\nYou may not have enough fuel for this generation.\n\nPlease top up at https://ailab.adevdev.com`;
-                        }
+                        // Note: Don't block generation based on arbitrary fuel threshold
+                        // Let the API validate actual fuel requirements
                     } else {
                         console.error('[AiLab] Pre-flight check failed:', userInfoResponse.data.error);
                         return `❌ Authentication failed: ${userInfoResponse.data.error}`;
@@ -667,10 +665,11 @@ module.exports = {
 
                 if (status === 402 && data.error === 'Insufficient fuel') {
                     return `⛽ *Insufficient Fuel*\n\n` +
-                           `Required: ${data.data.required} fuel\n` +
-                           `Current: ${data.data.current} fuel\n` +
-                           `Deficit: ${data.data.deficit} fuel\n\n` +
-                           `Please top up your fuel at https://ailab.adevdev.com`;
+                           `You don't have enough fuel for this generation.\n\n` +
+                           `Required: *${data.data.required}* fuel\n` +
+                           `Current: *${data.data.current}* fuel\n` +
+                           `Deficit: *${data.data.deficit}* fuel\n\n` +
+                           `💳 Top up your fuel at:\nhttps://ailab.adevdev.com`;
                 }
 
                 return `❌ API Error (${status}): ${data.error || error.message}`;
