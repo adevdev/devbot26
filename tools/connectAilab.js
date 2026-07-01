@@ -7,6 +7,7 @@
 // ============================================
 
 const axios = require('axios');
+const { EventSource } = require('eventsource');
 
 /**
  * AiLab API Integration Tool
@@ -116,6 +117,8 @@ module.exports = {
         const userPhone = message.sender.id.split('@')[0];
         const phoneWithPlus = `+${userPhone}`;
 
+        console.log('[AiLab] Authentication - User phone:', phoneWithPlus);
+
         // Get base URL from environment (required)
         const baseUrl = process.env.AILAB_API_URL;
         if (!baseUrl) {
@@ -127,6 +130,8 @@ module.exports = {
         if (!apiKey) {
             return `❌ Configuration Error: AILAB_API_KEY is not configured in .env file`;
         }
+
+        console.log('[AiLab] API Config - Base URL:', baseUrl, '| API Key exists:', !!apiKey);
 
         // Common headers for all requests
         const headers = {
@@ -159,6 +164,39 @@ module.exports = {
             if (action === 'generate') {
                 if (!mode) {
                     return `❌ Error: 'mode' is required for generate action. Choose: t2i, t2v, i2v, or faceswap`;
+                }
+
+                // Pre-flight check: Verify authentication and fuel balance
+                try {
+                    console.log('[AiLab] Pre-flight check: Getting user info...');
+                    const userInfoResponse = await axios.get(`${baseUrl}/api/whatsapp/user`, {
+                        headers
+                    });
+
+                    if (userInfoResponse.data.success) {
+                        const user = userInfoResponse.data.data;
+                        console.log('[AiLab] Authentication verified:', {
+                            name: user.name,
+                            email: user.email,
+                            fuel: user.fuel,
+                            phone: user.whatsappPhone
+                        });
+
+                        if (user.fuel < 10) {
+                            return `⛽ *Low Fuel Warning*\n\nCurrent fuel: ${user.fuel}\nYou may not have enough fuel for this generation.\n\nPlease top up at https://ailab.adevdev.com`;
+                        }
+                    } else {
+                        console.error('[AiLab] Pre-flight check failed:', userInfoResponse.data.error);
+                        return `❌ Authentication failed: ${userInfoResponse.data.error}`;
+                    }
+                } catch (preflightError) {
+                    console.error('[AiLab] Pre-flight check exception:', preflightError.response?.data || preflightError.message);
+                    if (preflightError.response?.status === 401 || preflightError.response?.status === 404) {
+                        return `🔒 *Authentication Error*\n\nYour WhatsApp number (${phoneWithPlus}) is not connected to AiLab.\n\n` +
+                               `Please visit https://ailab.adevdev.com and connect your WhatsApp number first.\n\n` +
+                               `Debug: Status ${preflightError.response?.status}, Error: ${preflightError.response?.data?.error}`;
+                    }
+                    // Continue anyway if it's another type of error
                 }
 
                 // Build request body based on mode
@@ -224,224 +262,280 @@ module.exports = {
                     }
                 });
 
+                console.log('[AiLab] Generate API response:', JSON.stringify(response.data, null, 2));
+
                 if (!response.data.success) {
+                    console.error('[AiLab] Generate failed:', response.data.error);
                     return JSON.stringify({
                         success: false,
-                        error: response.data.error
+                        error: response.data.error || 'Generation request failed'
                     });
                 }
 
                 const job = response.data.data;
                 const jobId = job.jobId;
+                const runpodJobId = job.runpodJobId; // For SSE connection
 
-                console.log(`[AiLab] Job created: ${jobId}, starting background polling...`);
+                console.log(`[AiLab] Job created successfully:`, {
+                    jobId,
+                    runpodJobId,
+                    status: job.status,
+                    cost: job.cost,
+                    remainingFuel: job.remainingFuel
+                });
 
-                // Start background polling (non-blocking)
+                // Validate runpodJobId exists
+                if (!runpodJobId) {
+                    console.error('[AiLab] ERROR: runpodJobId missing from API response!');
+                    return JSON.stringify({
+                        success: false,
+                        error: 'API response missing runpodJobId. Cannot establish SSE connection.'
+                    });
+                }
+
+                console.log(`[AiLab] Connecting to SSE...`);
+
+                // Start SSE connection for real-time updates (non-blocking)
                 const progressMsg = context.progressMsg;
                 const roomJid = context.room;
                 const userMessage = context.message;
-                const userPrompt = requestBody.prompt; // Store original prompt for smart caption
+                const userPrompt = requestBody.prompt; // Store original prompt for caption
+                const generationMode = requestBody.mode;
+
+                // Import wachan for sending messages
+                const wachan = require('wachan');
 
                 (async () => {
-                    const maxWaitTime = 10 * 60 * 1000; // 10 minutes max
-                    const pollInterval = 5000; // 5 seconds
-                    const startTime = Date.now();
-                    let pollCount = 0;
+                    const sock = wachan.getSocket();
+
+                    // Build SSE URL
+                    let sseUrl = `${baseUrl}/api/stream/${runpodJobId}?mode=${generationMode}`;
+                    if (generationMode === 't2i' && requestBody.level) {
+                        sseUrl += `&level=${requestBody.level}`;
+                    }
+
+                    console.log(`[AiLab] Connecting to SSE: ${sseUrl}`);
+
+                    const es = new EventSource(sseUrl);
                     let lastUpdateTime = 0;
-                    const UPDATE_THROTTLE = 3000;
+                    const UPDATE_THROTTLE = 3000; // 3 seconds throttle for progress updates
 
-                    while (Date.now() - startTime < maxWaitTime) {
+                    // Helper to update progress message
+                    const updateProgress = async (text) => {
+                        if (!progressMsg) return;
+                        const now = Date.now();
+                        if (now - lastUpdateTime > UPDATE_THROTTLE) {
+                            try {
+                                await progressMsg.edit(text);
+                                lastUpdateTime = now;
+                            } catch (e) {
+                                console.error('[AiLab] Failed to update progress:', e.message);
+                            }
+                        }
+                    };
+
+                    // Helper to send final result
+                    const sendResult = async (images, videos) => {
                         try {
-                            await new Promise(r => setTimeout(r, pollInterval));
-                            pollCount++;
+                            const axios = require('axios');
 
-                            const statusResponse = await axios.get(`${baseUrl}/api/whatsapp/job/${jobId}`, {
-                                headers
-                            });
-
-                            if (!statusResponse.data.success) {
-                                console.error('[AiLab] Failed to get status:', statusResponse.data.error);
-                                continue;
-                            }
-
-                            const currentJob = statusResponse.data.data;
-                            console.log(`[AiLab] Background poll #${pollCount} - Status: ${currentJob.status}`);
-
-                            // Update progress message
-                            if (progressMsg) {
-                                const now = Date.now();
-                                if (now - lastUpdateTime > UPDATE_THROTTLE) {
-                                    try {
-                                        let statusText = 'queue';
-                                        if (currentJob.status === 'processing') statusText = 'generating';
-                                        else if (currentJob.status === 'completed') statusText = 'complete';
-
-                                        await progressMsg.edit(`Generating. . . . ${statusText}`);
-                                        lastUpdateTime = now;
-                                    } catch (e) {
-                                        console.error('[AiLab] Failed to update progress:', e.message);
-                                    }
-                                }
-                            }
-
-                            // Check if completed or failed
-                            if (currentJob.status === 'completed') {
-                                console.log('[AiLab] Generation completed, sending result...');
-
-                                // Send image directly
-                                if (currentJob.output.images && currentJob.output.images.length > 0) {
-                                    try {
-                                        const axios = require('axios');
-                                        const imageResponse = await axios.get(currentJob.output.images[0], {
-                                            responseType: 'arraybuffer'
-                                        });
-                                        const imageBuffer = Buffer.from(imageResponse.data);
-
-                                        // Generate thumbnail with proper Jimp usage
-                                        const { Jimp } = require('jimp');
-                                        const image = await Jimp.read(imageBuffer);
-                                        const thumbnailWidth = Math.max(1, Math.floor(image.bitmap.width * 0.05));
-                                        const thumbnailHeight = Math.max(1, Math.floor(image.bitmap.height * 0.05));
-                                        const resized = await image.resize({ w: thumbnailWidth, h: thumbnailHeight });
-                                        const thumbnail = await resized.getBuffer('image/jpeg');
-
-                                        console.log(`[AiLab] Thumbnail generated: ${thumbnailWidth}x${thumbnailHeight}`);
-
-                                        // Generate smart caption (just describe what was generated)
-                                        const caption = userPrompt || 'Generated image';
-
-                                        // Send via baileys
-                                        const wachan = require('wachan');
-                                        const sock = wachan.getSocket();
-
-                                        const imageOptions = {
-                                            image: imageBuffer,
-                                            jpegThumbnail: thumbnail,
-                                            caption: caption
-                                        };
-
-                                        const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
-
-                                        await sock.sendMessage(roomJid, imageOptions, quotedOptions);
-
-                                        // Update progress message
-                                        if (progressMsg) {
-                                            try {
-                                                await progressMsg.edit(`🔧 Used tools: connectAilab`);
-                                            } catch (e) {
-                                                console.error('[AiLab] Failed to update final progress:', e.message);
-                                            }
-                                        }
-
-                                        console.log('[AiLab] Image sent successfully');
-                                    } catch (error) {
-                                        console.error('[AiLab] Failed to send image:', error.message);
-
-                                        // Fallback: send error text
-                                        const wachan = require('wachan');
-                                        const sock = wachan.getSocket();
-                                        await sock.sendMessage(roomJid, {
-                                            text: `Failed to send image: ${error.message}`
-                                        });
-                                    }
-                                }
-                                // Send video directly
-                                else if (currentJob.output.videos && currentJob.output.videos.length > 0) {
-                                    try {
-                                        const axios = require('axios');
-                                        console.log('[AiLab] Downloading video...');
-                                        const videoResponse = await axios.get(currentJob.output.videos[0], {
-                                            responseType: 'arraybuffer',
-                                            timeout: 120000 // 2 minutes for large videos
-                                        });
-                                        const videoBuffer = Buffer.from(videoResponse.data);
-                                        console.log(`[AiLab] Video downloaded: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
-
-                                        // Generate caption
-                                        const caption = userPrompt || 'Generated video';
-
-                                        // Send via baileys
-                                        const wachan = require('wachan');
-                                        const sock = wachan.getSocket();
-
-                                        const videoOptions = {
-                                            video: videoBuffer,
-                                            caption: caption
-                                        };
-
-                                        const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
-
-                                        await sock.sendMessage(roomJid, videoOptions, quotedOptions);
-
-                                        // Update progress message
-                                        if (progressMsg) {
-                                            try {
-                                                await progressMsg.edit(`🔧 Used tools: connectAilab`);
-                                            } catch (e) {
-                                                console.error('[AiLab] Failed to update final progress:', e.message);
-                                            }
-                                        }
-
-                                        console.log('[AiLab] Video sent successfully');
-                                    } catch (error) {
-                                        console.error('[AiLab] Failed to send video:', error.message);
-
-                                        // Fallback: send error text
-                                        const wachan = require('wachan');
-                                        const sock = wachan.getSocket();
-                                        await sock.sendMessage(roomJid, {
-                                            text: `Failed to send video: ${error.message}`
-                                        });
-                                    }
-                                }
-
-                                break; // Exit loop
-                            } else if (currentJob.status === 'failed') {
-                                console.log('[AiLab] Generation failed');
-
-                                // Send failure notification
-                                const wachan = require('wachan');
-                                const sock = wachan.getSocket();
-                                await sock.sendMessage(roomJid, {
-                                    text: `❌ Generation failed: ${currentJob.error || 'Unknown error'}`
+                            // Send image
+                            if (images && images.length > 0) {
+                                console.log('[AiLab] Downloading image...');
+                                const imageResponse = await axios.get(images[0], {
+                                    responseType: 'arraybuffer'
                                 });
+                                const imageBuffer = Buffer.from(imageResponse.data);
 
-                                // Update progress message
-                                if (progressMsg) {
-                                    try {
-                                        await progressMsg.edit(`🔧 Used tools: connectAilab`);
-                                    } catch (e) {
-                                        console.error('[AiLab] Failed to update progress:', e.message);
-                                    }
+                                // Generate thumbnail
+                                const { Jimp } = require('jimp');
+                                const image = await Jimp.read(imageBuffer);
+                                const thumbnailWidth = Math.max(1, Math.floor(image.bitmap.width * 0.05));
+                                const thumbnailHeight = Math.max(1, Math.floor(image.bitmap.height * 0.05));
+                                const resized = await image.resize({ w: thumbnailWidth, h: thumbnailHeight });
+                                const thumbnail = await resized.getBuffer('image/jpeg');
+
+                                console.log(`[AiLab] Thumbnail generated: ${thumbnailWidth}x${thumbnailHeight}`);
+
+                                const caption = userPrompt || 'Generated image';
+                                const imageOptions = {
+                                    image: imageBuffer,
+                                    jpegThumbnail: thumbnail,
+                                    caption: caption
+                                };
+
+                                const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+                                await sock.sendMessage(roomJid, imageOptions, quotedOptions);
+
+                                console.log('[AiLab] Image sent successfully');
+                            }
+                            // Send video
+                            else if (videos && videos.length > 0) {
+                                console.log('[AiLab] Downloading video...');
+                                const videoResponse = await axios.get(videos[0], {
+                                    responseType: 'arraybuffer',
+                                    timeout: 120000 // 2 minutes
+                                });
+                                const videoBuffer = Buffer.from(videoResponse.data);
+                                console.log(`[AiLab] Video downloaded: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+                                const caption = userPrompt || 'Generated video';
+                                const videoOptions = {
+                                    video: videoBuffer,
+                                    caption: caption
+                                };
+
+                                const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+                                await sock.sendMessage(roomJid, videoOptions, quotedOptions);
+
+                                console.log('[AiLab] Video sent successfully');
+                            }
+
+                            // Update progress message to final state
+                            if (progressMsg) {
+                                try {
+                                    await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                } catch (e) {
+                                    console.error('[AiLab] Failed to update final progress:', e.message);
                                 }
-
-                                break; // Exit loop
                             }
 
                         } catch (error) {
-                            console.error('[AiLab] Background polling error:', error.message);
+                            console.error('[AiLab] Failed to send result:', error.message);
+                            await sock.sendMessage(roomJid, {
+                                text: `Failed to send result: ${error.message}`
+                            });
                         }
-                    }
+                    };
 
-                    // Timeout handling
-                    if (Date.now() - startTime >= maxWaitTime) {
-                        console.log('[AiLab] Background polling timeout');
-                        const wachan = require('wachan');
-                        const sock = wachan.getSocket();
-                        await sock.sendMessage(roomJid, {
-                            text: `⏱️ *Generation Timeout*\n\nJob ${jobId} exceeded 10 minutes.\nUse check_status to manually check.`
-                        });
-                    }
+                    // SSE event handler
+                    es.onmessage = async (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            console.log('[AiLab] SSE event:', data.type, data);
+
+                            switch (data.type) {
+                                case 'queued':
+                                    await updateProgress('Generating. . . . queued');
+                                    break;
+
+                                case 'start':
+                                    await updateProgress('Generating. . . . starting');
+                                    break;
+
+                                case 'executing':
+                                    // Map node IDs to friendly messages
+                                    const nodeMessages = {
+                                        '1': 'loading model',
+                                        '2': 'encoding prompt',
+                                        '3': 'preparing',
+                                        '4': 'preparing',
+                                        '5': 'generating',
+                                        '6': 'decoding',
+                                        '7': 'saving'
+                                    };
+                                    const nodeMsg = nodeMessages[data.node] || 'processing';
+                                    await updateProgress(`Generating. . . . ${nodeMsg}`);
+                                    break;
+
+                                case 'progress':
+                                    const percent = Math.round((data.step / data.total) * 100);
+                                    await updateProgress(`Generating. . . . ${percent}%`);
+                                    break;
+
+                                case 'done':
+                                    console.log('[AiLab] Generation completed via SSE');
+                                    es.close();
+                                    await sendResult(data.images, data.videos);
+                                    break;
+
+                                case 'error':
+                                    console.error('[AiLab] Generation failed:', data.message);
+                                    es.close();
+                                    await sock.sendMessage(roomJid, {
+                                        text: `❌ Generation failed: ${data.message || 'Unknown error'}`
+                                    });
+                                    if (progressMsg) {
+                                        try {
+                                            await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                        } catch (e) {
+                                            console.error('[AiLab] Failed to update progress:', e.message);
+                                        }
+                                    }
+                                    break;
+                            }
+                        } catch (error) {
+                            console.error('[AiLab] SSE message parse error:', error.message);
+                        }
+                    };
+
+                    // SSE error handler - fallback to polling
+                    es.onerror = async (error) => {
+                        console.error('[AiLab] SSE connection error:', error.message || 'Connection failed');
+                        es.close();
+
+                        console.log('[AiLab] Falling back to polling...');
+
+                        // Fallback: poll job status
+                        const maxWaitTime = 10 * 60 * 1000; // 10 minutes
+                        const pollInterval = 10000; // 10 seconds
+                        const startTime = Date.now();
+
+                        while (Date.now() - startTime < maxWaitTime) {
+                            try {
+                                await new Promise(r => setTimeout(r, pollInterval));
+
+                                const statusResponse = await axios.get(`${baseUrl}/api/whatsapp/job/${jobId}`, {
+                                    headers
+                                });
+
+                                if (!statusResponse.data.success) {
+                                    console.error('[AiLab] Failed to get status:', statusResponse.data.error);
+                                    continue;
+                                }
+
+                                const currentJob = statusResponse.data.data;
+                                console.log('[AiLab] Polling status:', currentJob.status);
+
+                                if (currentJob.status === 'completed') {
+                                    await sendResult(currentJob.output.images, currentJob.output.videos);
+                                    break;
+                                } else if (currentJob.status === 'failed') {
+                                    await sock.sendMessage(roomJid, {
+                                        text: `❌ Generation failed: ${currentJob.error || 'Unknown error'}`
+                                    });
+                                    if (progressMsg) {
+                                        try {
+                                            await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                        } catch (e) {
+                                            console.error('[AiLab] Failed to update progress:', e.message);
+                                        }
+                                    }
+                                    break;
+                                }
+                            } catch (error) {
+                                console.error('[AiLab] Polling error:', error.message);
+                            }
+                        }
+
+                        // Timeout handling
+                        if (Date.now() - startTime >= maxWaitTime) {
+                            console.log('[AiLab] Polling timeout');
+                            await sock.sendMessage(roomJid, {
+                                text: `⏱️ *Generation Timeout*\n\nJob ${jobId} exceeded 10 minutes.\nUse check_status to manually check.`
+                            });
+                        }
+                    };
                 })();
 
-                // Return immediately to AI (don't wait for polling)
+                // Return immediately to AI (don't wait for SSE)
                 // silent: true = don't generate text response, just keep progress message
                 return JSON.stringify({
                     success: true,
                     jobId: job.jobId,
                     status: 'pending',
                     silent: true,
-                    message: 'Generation started. Background polling will send result automatically.'
+                    message: 'Generation started. SSE connection established for real-time updates.'
                 });
             }
 
@@ -549,14 +643,26 @@ module.exports = {
                 const status = error.response.status;
                 const data = error.response.data;
 
+                console.error('[AiLab] API Error:', {
+                    status,
+                    statusText: error.response.statusText,
+                    data,
+                    headers: {
+                        authorization: headers.Authorization,
+                        apiKey: apiKey ? '***EXISTS***' : 'MISSING'
+                    }
+                });
+
                 if (status === 401) {
                     return `🔒 *Authentication Error*\n\nYour WhatsApp number (${phoneWithPlus}) is not connected to AiLab.\n\n` +
-                           `Please visit https://ailab.adevdev.com and connect your WhatsApp number first.`;
+                           `Please visit https://ailab.adevdev.com and connect your WhatsApp number first.\n\n` +
+                           `Debug: ${data.error || 'No error message'}`;
                 }
 
                 if (status === 404) {
                     return `❌ *Not Found*\n\nYour WhatsApp number is not connected to any AiLab account.\n\n` +
-                           `Please visit https://ailab.adevdev.com to connect.`;
+                           `Please visit https://ailab.adevdev.com to connect.\n\n` +
+                           `Debug: ${data.error || 'No error message'}`;
                 }
 
                 if (status === 402 && data.error === 'Insufficient fuel') {
@@ -571,6 +677,7 @@ module.exports = {
             }
 
             // Network or other errors
+            console.error('[AiLab] Network/Other Error:', error.message);
             return `❌ Error: ${error.message}`;
         }
     }
