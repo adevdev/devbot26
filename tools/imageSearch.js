@@ -7,7 +7,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: 'image_search',
-        description: 'Search for EXISTING images on Pinterest. Use this tool when user wants to FIND/SEARCH for images (keywords: "cari", "search", "find", "tampilkan", "show me"). The system will automatically send the first image found. Do NOT use this if user wants to CREATE/GENERATE images (keywords: "bikin", "buat", "generate", "create") - use connectAilab instead for generation.',
+        description: 'Search for EXISTING images on Pinterest. Use this tool when user wants to FIND/SEARCH for images. The system will automatically send the first image found. Do NOT use this if user wants to CREATE/GENERATE images - use connectAilab instead for generation.',
         input_schema: {
             type: 'object',
             properties: {

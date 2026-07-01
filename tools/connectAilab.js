@@ -16,7 +16,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: "connectAilab",
-        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW (keywords: 'bikin', 'buat', 'generate', 'create', 'make'). Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead. User must have connected their WhatsApp number via AiLab web interface first.",
+        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW. Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. For t2i: settings are auto-optimized (1:1, SD quality, moon level). For t2v/i2v: settings are auto-optimized (SD quality, Channel B, no prompt enhancement) - only duration can be customized (max 10 seconds). After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead. User must have connected their WhatsApp number via AiLab web interface first.",
 
         input_schema: {
             type: "object",
@@ -43,7 +43,7 @@ module.exports = {
                 quality: {
                     type: "string",
                     enum: ["sd", "hd", "fhd"],
-                    description: "Quality level (optional, default: hd). sd=standard, hd=high definition, fhd=full HD"
+                    description: "Quality level (optional, default: hd). sd=standard, hd=high definition, fhd=full HD. Note: For t2v/i2v, quality is automatically set to 'sd' and cannot be changed."
                 },
                 level: {
                     type: "string",
@@ -53,16 +53,16 @@ module.exports = {
                 channel: {
                     type: "string",
                     enum: ["B", "S"],
-                    description: "Channel for video generation (optional, default: B). Only for t2v/i2v. B=better quality, S=faster"
+                    description: "Channel for video generation. B=better quality, S=faster. Note: For t2v/i2v, channel is automatically set to 'B' and cannot be changed."
                 },
                 duration: {
                     type: "number",
-                    enum: [2, 5, 7, 10, 15, 20],
-                    description: "Video duration in seconds (optional, default: 2). Only for t2v/i2v."
+                    enum: [2, 5, 7, 10],
+                    description: "Video duration in seconds (optional, default: 2, max: 10). Only for t2v/i2v. Other video settings (quality, channel, enhancePrompt) are automatically optimized."
                 },
                 enhancePrompt: {
                     type: "boolean",
-                    description: "Enhance prompt automatically (optional, default: false). Only for t2v channel B and i2v."
+                    description: "Enhance prompt automatically. Note: For t2v/i2v, this is automatically set to false and cannot be changed."
                 },
                 uploadImage: {
                     type: "string",
@@ -98,7 +98,7 @@ module.exports = {
     metadata: {
         icon: '🎨',
         progressMessage: (input) => `Connecting to AiLab: _${input.action}_`,
-        resultType: 'image' // Tool returns images/videos in JSON format
+        resultType: 'media' // Tool returns images and videos
     },
 
     /**
@@ -172,18 +172,28 @@ module.exports = {
                     requestBody.aspectRatio = '1:1'; // 512x512 for SD
                     requestBody.quality = 'sd';       // Standard Definition
                     requestBody.level = 'moon';       // Fast - Low cost
-                } else {
-                    // For other modes, allow custom settings
+                }
+                // Force optimal settings for video modes (t2v/i2v)
+                else if (mode === 't2v' || mode === 'i2v') {
+                    requestBody.quality = 'sd';        // Standard Definition
+                    requestBody.channel = 'B';         // Channel B - safe and controlled
+                    requestBody.enhancePrompt = false; // Disabled
+
+                    // Only allow duration customization (max 10 seconds)
+                    if (duration) {
+                        if (duration > 10) {
+                            return `❌ Error: Maximum duration is 10 seconds`;
+                        }
+                        requestBody.duration = duration;
+                    } else {
+                        requestBody.duration = 2; // Default 2 seconds
+                    }
+                }
+                else {
+                    // For other modes (faceswap), allow custom settings
                     if (aspectRatio) requestBody.aspectRatio = aspectRatio;
                     if (quality) requestBody.quality = quality;
                     if (level) requestBody.level = level;
-                }
-
-                // Add video-specific parameters
-                if (mode === 't2v' || mode === 'i2v') {
-                    if (channel) requestBody.channel = channel;
-                    if (duration) requestBody.duration = duration;
-                    if (enhancePrompt !== undefined) requestBody.enhancePrompt = enhancePrompt;
                 }
 
                 // Add mode-specific required parameters
@@ -276,7 +286,7 @@ module.exports = {
 
                             // Check if completed or failed
                             if (currentJob.status === 'completed') {
-                                console.log('[AiLab] Generation completed, sending image...');
+                                console.log('[AiLab] Generation completed, sending result...');
 
                                 // Send image directly
                                 if (currentJob.output.images && currentJob.output.images.length > 0) {
@@ -331,7 +341,56 @@ module.exports = {
                                         const wachan = require('wachan');
                                         const sock = wachan.getSocket();
                                         await sock.sendMessage(roomJid, {
-                                            text: `Gagal mengirim gambar: ${error.message}`
+                                            text: `Failed to send image: ${error.message}`
+                                        });
+                                    }
+                                }
+                                // Send video directly
+                                else if (currentJob.output.videos && currentJob.output.videos.length > 0) {
+                                    try {
+                                        const axios = require('axios');
+                                        console.log('[AiLab] Downloading video...');
+                                        const videoResponse = await axios.get(currentJob.output.videos[0], {
+                                            responseType: 'arraybuffer',
+                                            timeout: 120000 // 2 minutes for large videos
+                                        });
+                                        const videoBuffer = Buffer.from(videoResponse.data);
+                                        console.log(`[AiLab] Video downloaded: ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB`);
+
+                                        // Generate caption
+                                        const caption = userPrompt || 'Generated video';
+
+                                        // Send via baileys
+                                        const wachan = require('wachan');
+                                        const sock = wachan.getSocket();
+
+                                        const videoOptions = {
+                                            video: videoBuffer,
+                                            caption: caption
+                                        };
+
+                                        const quotedOptions = userMessage ? { quoted: userMessage.toBaileys() } : {};
+
+                                        await sock.sendMessage(roomJid, videoOptions, quotedOptions);
+
+                                        // Update progress message
+                                        if (progressMsg) {
+                                            try {
+                                                await progressMsg.edit(`🔧 Used tools: connectAilab`);
+                                            } catch (e) {
+                                                console.error('[AiLab] Failed to update final progress:', e.message);
+                                            }
+                                        }
+
+                                        console.log('[AiLab] Video sent successfully');
+                                    } catch (error) {
+                                        console.error('[AiLab] Failed to send video:', error.message);
+
+                                        // Fallback: send error text
+                                        const wachan = require('wachan');
+                                        const sock = wachan.getSocket();
+                                        await sock.sendMessage(roomJid, {
+                                            text: `Failed to send video: ${error.message}`
                                         });
                                     }
                                 }
@@ -344,7 +403,7 @@ module.exports = {
                                 const wachan = require('wachan');
                                 const sock = wachan.getSocket();
                                 await sock.sendMessage(roomJid, {
-                                    text: `❌ Gagal generate gambar: ${currentJob.error || 'Unknown error'}`
+                                    text: `❌ Generation failed: ${currentJob.error || 'Unknown error'}`
                                 });
 
                                 // Update progress message
@@ -465,8 +524,12 @@ module.exports = {
                         result += `   Cost: ${job.cost} fuel\n`;
                         result += `   Created: ${new Date(job.createdAt).toLocaleString()}\n`;
 
-                        if (job.status === 'completed' && job.output.images.length > 0) {
-                            result += `   ✅ Result: ${job.output.images[0]}\n`;
+                        if (job.status === 'completed') {
+                            if (job.output.images && job.output.images.length > 0) {
+                                result += `   ✅ Image: ${job.output.images[0]}\n`;
+                            } else if (job.output.videos && job.output.videos.length > 0) {
+                                result += `   ✅ Video: ${job.output.videos[0]}\n`;
+                            }
                         }
 
                         result += `\n`;
