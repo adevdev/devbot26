@@ -17,7 +17,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: "connectAilab",
-        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW. Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. For t2i: settings are auto-optimized (1:1, SD quality, moon level). For t2v/i2v: settings are auto-optimized (SD quality, Channel B, no prompt enhancement) - only duration can be customized (max 10 seconds). After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead. User must have connected their WhatsApp number via AiLab web interface first.",
+        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW. Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. For t2i: settings are auto-optimized (1:1, SD quality, moon level). For t2v/i2v: settings are auto-optimized (SD quality, Channel B, no prompt enhancement) - only duration can be customized (max 10 seconds). Authentication and fuel balance are automatically verified before generation - no need to call get_user_info first. After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead.",
 
         input_schema: {
             type: "object",
@@ -25,7 +25,7 @@ module.exports = {
                 action: {
                     type: "string",
                     enum: ["get_user_info", "generate", "check_status", "list_jobs"],
-                    description: "Action to perform: get_user_info (check fuel balance), generate (create generation job), check_status (check job status), list_jobs (list recent jobs)"
+                    description: "Action to perform: get_user_info (only use when user explicitly asks for their fuel balance or account info - NOT required before generate), generate (create generation job - automatically verifies auth), check_status (check job status), list_jobs (list recent jobs)"
                 },
                 mode: {
                     type: "string",

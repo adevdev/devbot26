@@ -679,7 +679,10 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         }
 
         // If image was found and sent, return null (already sent via baileys)
+        // Note: This is likely dead code now that imageSearch uses silent mode
         if (imageSearchResult) {
+            console.log('[AI] Image search result detected - saving to memory before return');
+            await saveToMemory(roomJid, prompt, '[Image sent via search]', model, userMessage, imageBuffer, group);
             return null;
         }
 
@@ -700,9 +703,34 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
         // If silent mode, keep progress message and return null
         if (silentMode) {
-            // Progress message will be updated by background polling
+            // Progress message will be updated by background processing
+            // Save to memory before early return
+            console.log('[AI] Silent mode active - saving to memory before background processing');
+
+            // Extract tool info from response to create meaningful memory entry
+            let memoryResponse = '[Processing in background]';
+            try {
+                const toolUses = response.content.filter(block => block.type === 'tool_use');
+                if (toolUses.length > 0) {
+                    const toolUse = toolUses[0]; // Get first tool (usually only one in silent mode)
+
+                    if (toolUse.name === 'image_search' && toolUse.input.query) {
+                        memoryResponse = `[Searching for image: "${toolUse.input.query}"]`;
+                    } else if (toolUse.name === 'connectAilab' && toolUse.input.action === 'generate') {
+                        const mode = toolUse.input.mode || 'image';
+                        const prompt = toolUse.input.prompt || 'untitled';
+                        memoryResponse = `[Generating ${mode}: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"]`;
+                    } else {
+                        memoryResponse = `[Processing with tool: ${toolUse.name}]`;
+                    }
+                }
+            } catch (e) {
+                console.error('[AI] Failed to extract tool info for memory:', e.message);
+            }
+
+            await saveToMemory(roomJid, prompt, memoryResponse, model, userMessage, imageBuffer, group);
+
             // Just return null to skip text response
-            console.log('[AI] Silent mode active - background polling will handle response');
             return null;
         }
 
@@ -927,6 +955,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                 }
             }
 
+            // Save to memory (fallback path - image send failed)
+            await saveToMemory(roomJid, prompt, finalText + `\n\n_Image unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
+
             return null;
         }
     }
@@ -982,6 +1013,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                 console.log('[AI] No progressMsg to edit (Path 2)');
             }
 
+            // Save to memory after successful image send
+            await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
+
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
@@ -1009,6 +1043,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                     console.error('[AI] Failed to edit progress message:', e.message);
                 }
             }
+
+            // Save to memory (Priority 2 fallback - image download failed)
+            await saveToMemory(roomJid, prompt, finalText + `\n\n_Image unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
 
             return null;
         }
@@ -1108,6 +1145,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                     console.error('[AI] Failed to edit progress message:', e.message);
                 }
             }
+
+            // Save to memory (Priority 3 fallback - document send failed)
+            await saveToMemory(roomJid, prompt, finalText + `\n\n_Document unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
 
             return null;
         }
