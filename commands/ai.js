@@ -735,6 +735,43 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             }
         }
 
+        // Check if download_cached_media was executed and returned an image
+        let downloadedCacheImage = null;
+        for (const result of toolResults) {
+            try {
+                const parsed = JSON.parse(result.content);
+                // Check for filePath from download_cached_media
+                if (parsed.filePath && parsed.success && parsed.type === 'image') {
+                    const fs = require('fs');
+                    if (fs.existsSync(parsed.filePath)) {
+                        // Determine proper MIME type from file extension if mimetype is invalid
+                        let mimeType = parsed.mimetype;
+                        if (!mimeType || mimeType === 'unknown') {
+                            const ext = parsed.filePath.split('.').pop().toLowerCase();
+                            const mimeMap = {
+                                'jpg': 'image/jpeg',
+                                'jpeg': 'image/jpeg',
+                                'png': 'image/png',
+                                'gif': 'image/gif',
+                                'webp': 'image/webp'
+                            };
+                            mimeType = mimeMap[ext] || 'image/jpeg'; // Default to jpeg
+                            console.log(`[AI] Determined MIME type from extension: ${mimeType}`);
+                        }
+
+                        downloadedCacheImage = {
+                            buffer: fs.readFileSync(parsed.filePath),
+                            mimetype: mimeType,
+                            filePath: parsed.filePath
+                        };
+                        console.log(`[AI] Detected downloaded cache image: ${parsed.filePath} (${mimeType})`);
+                    }
+                }
+            } catch (e) {
+                // Not JSON, skip
+            }
+        }
+
         // If image was found and sent, return null (already sent via baileys)
         // Note: This is likely dead code now that imageSearch uses silent mode
         if (imageSearchResult) {
@@ -800,12 +837,36 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         });
 
         // Add ALL tool results
-        messages.push({
+        const toolResultsMessage = {
             role: 'user',
             content: toolResults
-        });
+        };
 
-        // Next API call with tool results
+        // IMPORTANT: If download_cached_media returned an image, include it in the next API call
+        // so Claude can actually "see" and analyze it
+        if (downloadedCacheImage) {
+            console.log('[AI] Including downloaded cache image in next API call for re-analysis');
+
+            // Convert buffer to base64
+            const base64Image = downloadedCacheImage.buffer.toString('base64');
+
+            // Add image to the message content
+            toolResultsMessage.content.push({
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: downloadedCacheImage.mimetype,
+                    data: base64Image
+                }
+            });
+
+            // Reset after using
+            downloadedCacheImage = null;
+        }
+
+        messages.push(toolResultsMessage);
+
+        // Next API call with tool results (and image if downloaded from cache)
         response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey, apiEndpoint);
     }
 
@@ -905,6 +966,8 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     }
 
     // Second pass: collect images/imageBuffer from tool results
+    let downloadedCacheImage = null; // For re-analysis of cached images
+
     for (const msg of messages) {
         if (msg.role === 'user' && Array.isArray(msg.content)) {
             for (const item of msg.content) {
@@ -916,6 +979,25 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                         if (parsed.imageBuffer && typeof parsed.imageBuffer === 'string') {
                             preparedImageBuffer = Buffer.from(parsed.imageBuffer, 'base64');
                             console.log('[AI] Found prepared imageBuffer from send_image tool');
+                        }
+
+                        // Check for filePath (from download_cached_media tool)
+                        if (parsed.filePath && parsed.success && parsed.type === 'image') {
+                            try {
+                                const fs = require('fs');
+                                if (fs.existsSync(parsed.filePath)) {
+                                    downloadedCacheImage = {
+                                        buffer: fs.readFileSync(parsed.filePath),
+                                        mimetype: parsed.mimetype || 'image/jpeg',
+                                        filePath: parsed.filePath
+                                    };
+                                    console.log(`[AI] Found downloaded cache image: ${parsed.filePath}`);
+                                } else {
+                                    console.warn(`[AI] Downloaded cache file not found: ${parsed.filePath}`);
+                                }
+                            } catch (readError) {
+                                console.error(`[AI] Failed to read cached image: ${readError.message}`);
+                            }
                         }
 
                         // Check for image URLs (from generation tools)
