@@ -238,15 +238,15 @@ module.exports = {
             });
         }
 
-        // Cache media messages for later reference
-        const chatId = message.room;  // ← FIX: Use message.room, not message.from
+        // Cache media messages BEFORE downloading (pure message object approach)
+        const chatId = message.room;
 
-        // Cache current message if has media
+        // Cache current message if has media - NO BUFFER PASSED (memory efficient)
         if (message.hasMedia || message.isMedia) {
-            console.log('[MediaCache] Attempting to cache current message...');
+            console.log('[MediaCache] Caching current message (message object only)...');
             try {
                 mediaCacheManager.cacheMediaMessage(chatId, message);
-                console.log('[MediaCache] ✅ Current message cached successfully');
+                console.log('[MediaCache] ✅ Current message cached');
             } catch (err) {
                 console.error('[MediaCache] ❌ Failed to cache current message:', err.message);
             }
@@ -256,15 +256,16 @@ module.exports = {
 
         // Cache quoted message if has media
         if (quotedMsg && (quotedMsg.hasMedia || quotedMsg.isMedia)) {
-            console.log('[MediaCache] Attempting to cache quoted message...');
+            console.log('[MediaCache] Caching quoted message (message object only)...');
             try {
                 mediaCacheManager.cacheMediaMessage(chatId, quotedMsg);
-                console.log('[MediaCache] ✅ Quoted message cached successfully');
+                console.log('[MediaCache] ✅ Quoted message cached');
             } catch (err) {
                 console.error('[MediaCache] ❌ Failed to cache quoted message:', err.message);
             }
         }
 
+        // NOW download media for AI analysis (after caching message object)
         // Check for image in quoted message
         if (quotedMsg && quotedMsg.isMedia && quotedMsg.type === 'image') {
             imageBuffer = await quotedMsg.downloadMedia();

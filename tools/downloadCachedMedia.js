@@ -23,6 +23,13 @@ module.exports = {
         }
     },
 
+    // Metadata for UI/UX
+    metadata: {
+        icon: '📥',
+        progressMessage: () => `Downloading cached media...`,
+        resultType: 'data'
+    },
+
     execute: async (input, context) => {
         const { messageId } = input;
         const { message } = context;

@@ -2399,6 +2399,8 @@ function restoreTabFromURL() {
                             loadTools();
                         } else if (subTab === 'prompts') {
                             loadSystemPrompts();
+                        } else if (subTab === 'media-cache') {
+                            loadMediaCache();
                         }
                     }
                 }

@@ -21,7 +21,7 @@ const MAX_CACHE_PER_CHAT = 10;
 /**
  * Add media message to cache
  * @param {string} chatId - Chat/group ID
- * @param {object} message - WhatsApp message object
+ * @param {object} message - WhatsApp message object (wachan)
  */
 function cacheMediaMessage(chatId, message) {
     try {
@@ -37,13 +37,7 @@ function cacheMediaMessage(chatId, message) {
             return;
         }
 
-        // Debug: Log message structure
-        console.log('[MediaCache] Message object keys:', Object.keys(message));
-        console.log('[MediaCache] Message.id:', message.id);
-        console.log('[MediaCache] Message.key:', message.key);
-
         const messageId = message.id?._serialized || message.id || message.key?.id || 'unknown';
-        console.log('[MediaCache] Extracted messageId:', messageId);
 
         const entry = {
             messageId: messageId,
@@ -52,35 +46,32 @@ function cacheMediaMessage(chatId, message) {
             caption: message.body || '',
             timestamp: message.timestamp || Date.now(),
             fromMe: message.fromMe || false,
-            sender: message.sender?.id || message.from
+            sender: message.sender?.id || message.from,
+            // PURE MESSAGE OBJECT APPROACH: Store only the message, no buffer
+            messageObject: message
         };
 
-        console.log('[MediaCache] Cache entry to be stored:', JSON.stringify(entry, null, 2));
+        console.log(`[MediaCache] Caching message object (no buffer) for ${messageId}`);
 
         // Get or create cache for this chat
         if (!mediaCache.has(chatId)) {
             mediaCache.set(chatId, []);
-            console.log('[MediaCache] Created new cache array for chatId:', chatId);
         }
 
         const chatCache = mediaCache.get(chatId);
-        console.log('[MediaCache] Current cache size for this chat:', chatCache.length);
 
         // Add to front (most recent first)
         chatCache.unshift(entry);
 
         // Limit cache size per chat
         if (chatCache.length > MAX_CACHE_PER_CHAT) {
-            chatCache.pop(); // Remove oldest
+            chatCache.pop();
         }
 
-        console.log('[MediaCache] Cached ${message.type} from ${chatId}: ${messageId}');
-        console.log('[MediaCache] Total chats in cache:', mediaCache.size);
-        console.log('[MediaCache] Total items in this chat:', chatCache.length);
+        console.log(`[MediaCache] Cached ${message.type} from ${chatId}: ${messageId} (${chatCache.length} items)`);
 
     } catch (error) {
         console.error('[MediaCache] Failed to cache media:', error.message);
-        console.error('[MediaCache] Error stack:', error.stack);
     }
 }
 
@@ -131,52 +122,32 @@ async function downloadCachedMedia(chatId, messageId) {
             return null;
         }
 
-        console.log(`[MediaCache] Attempting to download media from ${messageId}...`);
+        console.log(`[MediaCache] Found cached entry for ${messageId}`);
 
-        // Get WhatsApp client using wachan's API
-        const wachan = require('wachan');
-        const client = wachan.getSocket();
-
-        if (!client) {
-            console.error('[MediaCache] WhatsApp client (socket) not available');
+        // PURE MESSAGE OBJECT APPROACH: Re-download from cached message
+        if (!entry.messageObject) {
+            console.error('[MediaCache] No message object in cache entry - this should not happen!');
             return null;
         }
 
-        console.log('[MediaCache] WhatsApp client available, fetching message...');
+        console.log('[MediaCache] Re-downloading media from cached message object...');
 
-        // Retrieve message from WhatsApp using baileys method
-        const message = await client.getMessageById(messageId);
+        const buffer = await entry.messageObject.downloadMedia();
 
-        if (!message) {
-            console.error(`[MediaCache] Message ${messageId} not found on WhatsApp`);
+        if (!buffer) {
+            console.error('[MediaCache] Re-download failed: downloadMedia() returned null');
+            console.error('[MediaCache] This may happen if:');
+            console.error('[MediaCache] - Message was deleted from WhatsApp');
+            console.error('[MediaCache] - WhatsApp session disconnected');
+            console.error('[MediaCache] - Message object lost its context');
             return null;
         }
 
-        console.log('[MediaCache] Message retrieved, downloading media...');
-
-        // Download media using the message's downloadMedia method
-        if (message.hasMedia || message.downloadMedia) {
-            const media = await message.downloadMedia();
-
-            if (!media) {
-                console.error('[MediaCache] downloadMedia() returned null');
-                return null;
-            }
-
-            // Convert base64 to buffer if needed
-            const mediaBuffer = Buffer.isBuffer(media)
-                ? media
-                : Buffer.from(media.data || media, 'base64');
-
-            console.log(`[MediaCache] Downloaded ${mediaBuffer.length} bytes from ${messageId}`);
-            return mediaBuffer;
-        }
-
-        console.log(`[MediaCache] Message ${messageId} has no media or downloadMedia method`);
-        return null;
+        console.log(`[MediaCache] ✅ Successfully re-downloaded: ${buffer.length} bytes`);
+        return buffer;
 
     } catch (error) {
-        console.error('[MediaCache] Download failed:', error.message);
+        console.error('[MediaCache] Re-download failed with error:', error.message);
         console.error('[MediaCache] Error stack:', error.stack);
         return null;
     }
@@ -227,6 +198,12 @@ function cleanupExpired() {
  */
 function getCacheStats() {
     const now = Date.now();
+
+    // DEBUG: Log raw cache state
+    console.log('[MediaCache] getCacheStats() called');
+    console.log('[MediaCache] Total chats in cache:', mediaCache.size);
+    console.log('[MediaCache] Cache keys:', Array.from(mediaCache.keys()));
+
     const stats = {
         totalChats: mediaCache.size,
         totalItems: 0,
