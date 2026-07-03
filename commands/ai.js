@@ -6,6 +6,7 @@ const { Jimp } = require('jimp');
 const memoryManager = require('../memoryManager');
 const tools = require('../tools');
 const systemPromptLoader = require('../systemPromptLoader');
+const mediaCacheManager = require('../mediaCacheManager');
 
 
 // ============================================
@@ -218,6 +219,51 @@ module.exports = {
         let imageBuffer = null;
         let imageType = null;
         let pdfContent = null; // Store extracted PDF content
+
+        // Debug logging for media detection
+        console.log('[MediaCache] Current message check:', {
+            hasMedia: message.hasMedia,
+            isMedia: message.isMedia,
+            type: message.type,
+            mimetype: message.mimetype,
+            room: message.room,  // ← Use room instead of from
+            from: message.from
+        });
+        if (quotedMsg) {
+            console.log('[MediaCache] Quoted message check:', {
+                hasMedia: quotedMsg.hasMedia,
+                isMedia: quotedMsg.isMedia,
+                type: quotedMsg.type,
+                mimetype: quotedMsg.mimetype
+            });
+        }
+
+        // Cache media messages for later reference
+        const chatId = message.room;  // ← FIX: Use message.room, not message.from
+
+        // Cache current message if has media
+        if (message.hasMedia || message.isMedia) {
+            console.log('[MediaCache] Attempting to cache current message...');
+            try {
+                mediaCacheManager.cacheMediaMessage(chatId, message);
+                console.log('[MediaCache] ✅ Current message cached successfully');
+            } catch (err) {
+                console.error('[MediaCache] ❌ Failed to cache current message:', err.message);
+            }
+        } else {
+            console.log('[MediaCache] Current message has no media, skipping cache');
+        }
+
+        // Cache quoted message if has media
+        if (quotedMsg && (quotedMsg.hasMedia || quotedMsg.isMedia)) {
+            console.log('[MediaCache] Attempting to cache quoted message...');
+            try {
+                mediaCacheManager.cacheMediaMessage(chatId, quotedMsg);
+                console.log('[MediaCache] ✅ Quoted message cached successfully');
+            } catch (err) {
+                console.error('[MediaCache] ❌ Failed to cache quoted message:', err.message);
+            }
+        }
 
         // Check for image in quoted message
         if (quotedMsg && quotedMsg.isMedia && quotedMsg.type === 'image') {
@@ -496,7 +542,10 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
         // User info
         workingIdentifier,
-        sender: userMessage?.sender
+        sender: userMessage?.sender,
+
+        // Recent media cache (for faceswap, i2v workflows)
+        recentMedia: mediaCacheManager.getRecentMedia(roomJid)
     };
 
     // Generate system prompt from modular components
@@ -1376,6 +1425,8 @@ function callAIAPI(messages, tools, systemPrompt, model, apiKey, apiEndpoint) {
             res.on('end', () => {
                 try {
                     if (res.statusCode !== 200) {
+                        console.error('[AI] API Error Status:', res.statusCode);
+                        console.error('[AI] API Error Response:', data);
                         reject(new Error(`API returned status ${res.statusCode}: ${data}`));
                         return;
                     }

@@ -1351,6 +1351,58 @@ class BotDashboard {
             }
         });
 
+        // API: Get media cache stats
+        this.app.get('/api/ai-settings/media-cache', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const mediaCacheManager = require('./mediaCacheManager');
+                const stats = mediaCacheManager.getCacheStats();
+
+                res.json({
+                    success: true,
+                    stats: stats
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get media cache stats: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Clear all media cache
+        this.app.delete('/api/ai-settings/media-cache', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const mediaCacheManager = require('./mediaCacheManager');
+                const totalCleared = mediaCacheManager.clearAllCache();
+
+                this.addLog('info', `Media cache cleared: ${totalCleared} chats`);
+                res.json({
+                    success: true,
+                    message: `Cleared cache for ${totalCleared} chat(s)`,
+                    totalCleared: totalCleared
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to clear media cache: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Clear media cache for specific chat
+        this.app.delete('/api/ai-settings/media-cache/:chatId', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const { chatId } = req.params;
+                const mediaCacheManager = require('./mediaCacheManager');
+                mediaCacheManager.clearCache(chatId);
+
+                this.addLog('info', `Media cache cleared for chat: ${chatId}`);
+                res.json({
+                    success: true,
+                    message: `Cache cleared for ${chatId}`
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to clear chat cache: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
         // API: Get all tools
         this.app.get('/api/tools', this.requireAuth.bind(this), async (req, res) => {
             try {
@@ -1578,6 +1630,118 @@ class BotDashboard {
                     }
                 });
             } catch (error) {
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // ===== STATE MANAGEMENT ENDPOINTS =====
+
+        // API: Get state folder information
+        this.app.get('/api/state', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const stateDir = path.join(__dirname, 'wachan', 'state');
+
+                if (!fs.existsSync(stateDir)) {
+                    return res.json({
+                        success: true,
+                        exists: false,
+                        files: [],
+                        totalSize: 0,
+                        fileCount: 0
+                    });
+                }
+
+                const files = fs.readdirSync(stateDir);
+                const fileDetails = files.map(file => {
+                    const filePath = path.join(stateDir, file);
+                    const stats = fs.statSync(filePath);
+                    return {
+                        name: file,
+                        size: stats.size,
+                        modified: stats.mtime,
+                        isCreds: file === 'creds.json'
+                    };
+                });
+
+                const totalSize = fileDetails.reduce((sum, f) => sum + f.size, 0);
+
+                res.json({
+                    success: true,
+                    exists: true,
+                    path: stateDir,
+                    files: fileDetails,
+                    totalSize: totalSize,
+                    fileCount: files.length
+                });
+            } catch (error) {
+                this.addLog('error', `Failed to get state info: ${error.message}`);
+                res.status(500).json({ success: false, error: error.message });
+            }
+        });
+
+        // API: Clear state and restart
+        this.app.post('/api/state/clear-and-restart', this.requireAuth.bind(this), async (req, res) => {
+            try {
+                const fs = require('fs');
+                const path = require('path');
+                const stateDir = path.join(__dirname, 'wachan', 'state');
+
+                if (!fs.existsSync(stateDir)) {
+                    return res.status(400).json({ success: false, error: 'State directory not found' });
+                }
+
+                this.addLog('info', 'Starting state clear and restart...');
+
+                // Get all files
+                const files = fs.readdirSync(stateDir);
+                let deletedCount = 0;
+                let errors = [];
+
+                // Delete all files except creds.json
+                for (const file of files) {
+                    if (file === 'creds.json') {
+                        this.addLog('info', 'Preserving creds.json');
+                        continue;
+                    }
+
+                    try {
+                        const filePath = path.join(stateDir, file);
+                        fs.unlinkSync(filePath);
+                        deletedCount++;
+                    } catch (err) {
+                        errors.push(`${file}: ${err.message}`);
+                        this.addLog('error', `Failed to delete ${file}: ${err.message}`);
+                    }
+                }
+
+                this.addLog('success', `Cleared ${deletedCount} state files (preserved creds.json)`);
+
+                // Set status to restarting
+                this.setStatus('restarting');
+
+                // Stop current bot
+                if (this.stopBotCallback) {
+                    await this.stopBotCallback();
+                }
+
+                // Wait a bit
+                await new Promise(resolve => setTimeout(resolve, 2000));
+
+                // Start new bot
+                if (this.startBotCallback) {
+                    await this.startBotCallback();
+                }
+
+                res.json({
+                    success: true,
+                    deletedCount: deletedCount,
+                    errors: errors.length > 0 ? errors : null
+                });
+            } catch (error) {
+                this.addLog('error', `Clear and restart failed: ${error.message}`);
+                this.setStatus('stopped');
                 res.status(500).json({ success: false, error: error.message });
             }
         });

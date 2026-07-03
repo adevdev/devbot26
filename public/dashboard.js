@@ -470,8 +470,8 @@ async function logout() {
 
 // Tab switching
 function switchTab(tabName, buttonElement) {
-    // Check authentication for commands, rooms, contacts, scheduled-tasks, and ai-settings tabs
-    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'contacts' || tabName === 'scheduled-tasks' || tabName === 'ai-settings') && !isAuthenticated) {
+    // Check authentication for commands, rooms, contacts, scheduled-tasks, state-manager, and ai-settings tabs
+    if ((tabName === 'commands' || tabName === 'rooms' || tabName === 'contacts' || tabName === 'scheduled-tasks' || tabName === 'state-manager' || tabName === 'ai-settings') && !isAuthenticated) {
         showAlert('Authentication Required', 'This feature is only available for authenticated users. Please login first.');
         return;
     }
@@ -500,6 +500,8 @@ function switchTab(tabName, buttonElement) {
         loadContacts();
     } else if (tabName === 'scheduled-tasks') {
         loadScheduledTasks();
+    } else if (tabName === 'state-manager') {
+        loadStateInfo();
     } else if (tabName === 'ai-settings') {
         // Initialize first sub-tab as active
         document.querySelectorAll('#tab-ai-settings .tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -544,6 +546,8 @@ function switchAiSubTab(subTabName, buttonElement) {
         loadTools();
     } else if (subTabName === 'prompts') {
         loadSystemPrompts();
+    } else if (subTabName === 'media-cache') {
+        loadMediaCache();
     }
 }
 
@@ -3046,6 +3050,211 @@ async function saveSystemPrompts() {
 }
 
 // ============================================
+// Media Cache Functions
+// ============================================
+
+async function loadMediaCache() {
+    try {
+        console.log('[MediaCache UI] Loading media cache...');
+
+        const response = await fetch('/api/ai-settings/media-cache', {
+            credentials: 'same-origin'
+        });
+
+        console.log('[MediaCache UI] Response status:', response.status);
+
+        const data = await response.json();
+        console.log('[MediaCache UI] Response data:', data);
+
+        if (data.success) {
+            console.log('[MediaCache UI] Rendering cache stats...');
+            renderMediaCache(data.stats);
+        } else {
+            console.error('[MediaCache UI] API returned error:', data.error);
+            showNotification('Failed to load media cache: ' + data.error, 'error');
+        }
+    } catch (error) {
+        console.error('[MediaCache UI] Load error:', error);
+        showNotification('Failed to load media cache', 'error');
+    }
+}
+
+function renderMediaCache(stats) {
+    try {
+        console.log('[MediaCache UI] Rendering stats:', stats);
+
+        // Update statistics - with null checks
+        const totalChatsEl = document.getElementById('mediaCacheTotalChats');
+        const totalItemsEl = document.getElementById('mediaCacheTotalItems');
+        const ttlEl = document.getElementById('mediaCacheTTL');
+        const maxPerChatEl = document.getElementById('mediaCacheMaxPerChat');
+
+        if (!totalChatsEl || !totalItemsEl || !ttlEl || !maxPerChatEl) {
+            console.error('[MediaCache UI] Missing DOM elements for stats');
+            console.error('Elements found:', {
+                totalChats: !!totalChatsEl,
+                totalItems: !!totalItemsEl,
+                ttl: !!ttlEl,
+                maxPerChat: !!maxPerChatEl
+            });
+            return;
+        }
+
+        totalChatsEl.textContent = stats.totalChats || 0;
+        totalItemsEl.textContent = stats.totalItems || 0;
+        ttlEl.textContent = stats.config.ttlMinutes || 30;
+        maxPerChatEl.textContent = stats.config.maxPerChat || 10;
+
+        console.log('[MediaCache UI] Stats updated successfully');
+
+        // Render cached items
+        const listContainer = document.getElementById('mediaCacheList');
+
+        if (!listContainer) {
+            console.error('[MediaCache UI] mediaCacheList container not found');
+            return;
+        }
+
+        if (!stats.chats || stats.chats.length === 0) {
+            console.log('[MediaCache UI] No cached items to display');
+            listContainer.innerHTML = `
+                <div style="text-align: center; opacity: 0.5; padding: 2rem;">
+                    No cached media. Send images with AI commands to populate cache.
+                </div>
+            `;
+            return;
+        }
+
+        console.log('[MediaCache UI] Rendering', stats.chats.length, 'chat(s)');
+
+        listContainer.innerHTML = stats.chats.map(chat => {
+            const now = Date.now();
+            const ageMinutes = Math.floor((now - chat.newestTimestamp) / 60000);
+
+            return `
+                <div style="background: #0a0a0a; border: 1px solid #0f0; padding: 1rem; border-radius: 3px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <div>
+                            <div style="color: #0f0; font-weight: bold; margin-bottom: 0.25rem;">
+                                ${truncateChatId(chat.chatId)}
+                            </div>
+                            <div style="font-size: 0.85rem; opacity: 0.7;">
+                                ${chat.count} item${chat.count !== 1 ? 's' : ''} • Updated ${ageMinutes}m ago
+                            </div>
+                        </div>
+                        <button class="btn btn-small danger" onclick="clearChatCache('${chat.chatId}')">
+                            🗑️ Clear
+                        </button>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 0.5rem;">
+                        ${chat.items.map(item => {
+                            const itemAge = Math.floor((now - item.timestamp) / 60000);
+                            const expiresIn = stats.config.ttlMinutes - itemAge;
+
+                            return `
+                                <div style="background: #000; border: 1px solid #0f0; padding: 0.75rem; font-size: 0.85rem; display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 1rem; align-items: center;">
+                                    <div>
+                                        <div style="font-family: monospace; font-size: 0.75rem; opacity: 0.7; margin-bottom: 0.25rem;">
+                                            ${item.messageId.substring(0, 20)}...
+                                        </div>
+                                        ${item.caption ? `<div style="font-size: 0.8rem; opacity: 0.9;">"${item.caption}"</div>` : ''}
+                                    </div>
+                                    <div>
+                                        <span style="background: #0f0; color: #000; padding: 0.15rem 0.5rem; border-radius: 2px; font-size: 0.7rem; font-weight: bold;">
+                                            ${item.type.toUpperCase()}
+                                        </span>
+                                    </div>
+                                    <div style="opacity: 0.7; font-size: 0.8rem;">
+                                        ${itemAge}m ago
+                                    </div>
+                                    <div style="opacity: 0.7; font-size: 0.8rem;">
+                                        ${expiresIn > 0 ? `⏱️ ${expiresIn}m left` : '⚠️ Expired'}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        console.log('[MediaCache UI] Rendering completed successfully');
+
+    } catch (error) {
+        console.error('[MediaCache UI] Render error:', error);
+        console.error('[MediaCache UI] Error stack:', error.stack);
+    }
+}
+
+function truncateChatId(chatId) {
+    // Extract phone number or group ID
+    if (chatId.includes('@g.us')) {
+        return `Group (${chatId.split('@')[0].substring(0, 15)}...)`;
+    } else if (chatId.includes('@s.whatsapp.net')) {
+        const phone = chatId.split('@')[0];
+        return `+${phone}`;
+    }
+    return chatId.substring(0, 30) + '...';
+}
+
+async function refreshMediaCache() {
+    showNotification('Refreshing media cache...', 'info');
+    await loadMediaCache();
+    showNotification('Media cache refreshed', 'success');
+}
+
+async function clearAllMediaCache() {
+    if (!confirm('⚠️ Clear all cached media?\n\nThis will remove all message IDs from cache. Media files on WhatsApp are not affected.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/ai-settings/media-cache', {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification(`Cleared cache for ${data.totalCleared} chat(s)`, 'success');
+            await loadMediaCache(); // Refresh display
+        } else {
+            showNotification(data.error || 'Failed to clear cache', 'error');
+        }
+    } catch (error) {
+        console.error('Clear all cache error:', error);
+        showNotification('Failed to clear cache', 'error');
+    }
+}
+
+async function clearChatCache(chatId) {
+    if (!confirm(`Clear cache for this chat?\n\nChat: ${truncateChatId(chatId)}`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/ai-settings/media-cache/${encodeURIComponent(chatId)}`, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification('Chat cache cleared', 'success');
+            await loadMediaCache(); // Refresh display
+        } else {
+            showNotification(data.error || 'Failed to clear cache', 'error');
+        }
+    } catch (error) {
+        console.error('Clear chat cache error:', error);
+        showNotification('Failed to clear cache', 'error');
+    }
+}
+
+// ============================================
 // Contacts Management
 // ============================================
 
@@ -3196,5 +3405,149 @@ async function deleteContact(jid) {
         }
     } catch (error) {
         await showAlert('Error', 'Error deleting contact: ' + error.message);
+    }
+}
+
+// ============================================
+// State Manager Functions
+// ============================================
+
+// Load state directory information
+async function loadStateInfo() {
+    try {
+        const response = await fetch('/api/state', {
+            credentials: 'same-origin'
+        });
+        const data = await response.json();
+
+        if (data.success) {
+            if (!data.exists) {
+                document.getElementById('statePath').textContent = 'Not found';
+                document.getElementById('stateFileCount').textContent = '0';
+                document.getElementById('stateTotalSize').textContent = '0 KB';
+                document.getElementById('stateStatus').textContent = 'Missing';
+                document.getElementById('stateStatus').style.color = '#f00';
+
+                const tbody = document.getElementById('stateFilesTableBody');
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">State directory not found</td></tr>';
+                return;
+            }
+
+            // Update statistics
+            document.getElementById('statePath').textContent = data.path || 'Unknown';
+            document.getElementById('stateFileCount').textContent = data.fileCount;
+            document.getElementById('stateTotalSize').textContent = formatFileSize(data.totalSize);
+            document.getElementById('stateStatus').textContent = 'Active';
+            document.getElementById('stateStatus').style.color = '#0f0';
+
+            // Render files table
+            renderStateFiles(data.files);
+        } else {
+            document.getElementById('stateStatus').textContent = 'Error';
+            document.getElementById('stateStatus').style.color = '#f00';
+
+            const tbody = document.getElementById('stateFilesTableBody');
+            tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #f00;">Failed to load state info</td></tr>';
+        }
+    } catch (error) {
+        console.error('Error loading state info:', error);
+        document.getElementById('stateStatus').textContent = 'Error';
+        document.getElementById('stateStatus').style.color = '#f00';
+
+        const tbody = document.getElementById('stateFilesTableBody');
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: #f00;">Error loading state info</td></tr>';
+    }
+}
+
+// Render state files table
+function renderStateFiles(files) {
+    const tbody = document.getElementById('stateFilesTableBody');
+
+    if (!files || files.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; opacity: 0.6;">No state files found</td></tr>';
+        return;
+    }
+
+    // Sort: creds.json first, then alphabetically
+    files.sort((a, b) => {
+        if (a.isCreds) return -1;
+        if (b.isCreds) return 1;
+        return a.name.localeCompare(b.name);
+    });
+
+    tbody.innerHTML = files.map(file => {
+        const modifiedDate = new Date(file.modified).toLocaleString();
+        const protectedBadge = file.isCreds
+            ? '<span style="color: #0f0; font-weight: bold;">✓ Protected</span>'
+            : '<span style="opacity: 0.5;">—</span>';
+
+        const fileNameStyle = file.isCreds
+            ? 'color: #0f0; font-weight: bold;'
+            : '';
+
+        return `
+            <tr>
+                <td style="${fileNameStyle}">${escapeHtml(file.name)}</td>
+                <td>${formatFileSize(file.size)}</td>
+                <td style="opacity: 0.8; font-size: 0.85rem;">${modifiedDate}</td>
+                <td>${protectedBadge}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// Format file size
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
+}
+
+// Clear state and restart bot
+async function clearAndRestartState() {
+    const confirmed = await showConfirm(
+        'Clear State & Restart',
+        '⚠️ WARNING: This will:\n\n' +
+        '• Delete ALL state files except creds.json\n' +
+        '• Force WhatsApp re-authentication\n' +
+        '• Restart the bot connection\n\n' +
+        'This action cannot be undone. Continue?'
+    );
+
+    if (!confirmed) return;
+
+    try {
+        // Show loading state
+        document.getElementById('stateStatus').textContent = 'Clearing...';
+        document.getElementById('stateStatus').style.color = '#ff0';
+
+        const response = await fetch('/api/state/clear-and-restart', {
+            method: 'POST',
+            credentials: 'same-origin'
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            const message = `Successfully cleared ${data.deletedCount} state file(s) and restarted bot.` +
+                          (data.errors && data.errors.length > 0
+                              ? `\n\nErrors: ${data.errors.join(', ')}`
+                              : '');
+
+            await showAlert('Success', message);
+
+            // Reload state info
+            setTimeout(() => loadStateInfo(), 2000);
+        } else {
+            await showAlert('Error', 'Failed to clear state: ' + (data.error || 'Unknown error'));
+            document.getElementById('stateStatus').textContent = 'Error';
+            document.getElementById('stateStatus').style.color = '#f00';
+        }
+    } catch (error) {
+        await showAlert('Error', 'Error clearing state: ' + error.message);
+        document.getElementById('stateStatus').textContent = 'Error';
+        document.getElementById('stateStatus').style.color = '#f00';
     }
 }

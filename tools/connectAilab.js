@@ -17,7 +17,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: "connectAilab",
-        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW. Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. For t2i: settings are auto-optimized (1:1, SD quality, moon level). For t2v/i2v: settings are auto-optimized (SD quality, Channel B, no prompt enhancement) - only duration can be customized (max 10 seconds). Authentication and fuel balance are automatically verified before generation - no need to call get_user_info first. After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead.",
+        description: "CREATE/GENERATE NEW images and videos using AI. Use this tool when user wants to CREATE/GENERATE/MAKE something NEW. Supports text-to-image (t2i), text-to-video (t2v), image-to-video (i2v), and faceswap. For t2i: settings are auto-optimized (1:1, SD quality, moon level). For t2v/i2v: settings are auto-optimized (SD quality, Channel B, no prompt enhancement) - only duration can be customized (max 10 seconds). CRITICAL FOR FACESWAP AND I2V: You CANNOT use this tool with faceswap or i2v mode until you have PUBLIC CDN URLS from upload_image tool. WhatsApp message references DO NOT WORK - you MUST call upload_image tool FIRST to convert WhatsApp images into public URLs, then use those URLs with this tool. FACESWAP WORKFLOW STEPS (MANDATORY): (1) User sends first image → (2) YOU MUST CALL upload_image tool immediately with purpose faceswap_target → (3) Store the returned URL → (4) Ask for second image → (5) User sends second image → (6) YOU MUST CALL upload_image tool immediately with purpose faceswap_source → (7) Now call THIS tool with both URLs. DO NOT skip calling upload_image - without public URLs this tool will fail. DO NOT say 'image uploaded' unless you actually called upload_image tool and received URL in response. Authentication and fuel balance are automatically verified before generation - no need to call get_user_info first. After calling 'generate', the system will automatically poll for completion in the background and call you back with the result. You don't need to manually check status. When job completes, you will receive the result and should use send_image to send it. Do NOT use this if user wants to SEARCH for existing images - use image_search instead.",
 
         input_schema: {
             type: "object",
@@ -67,15 +67,15 @@ module.exports = {
                 },
                 uploadImage: {
                     type: "string",
-                    description: "Public URL to input image (required for i2v). Must be accessible without auth."
+                    description: "Public URL to input image (required for i2v). Use upload_image tool first to get this URL from WhatsApp image."
                 },
                 sourceImage: {
                     type: "string",
-                    description: "Public URL to source face image (required for faceswap). Must be accessible without auth."
+                    description: "Public URL to source face image (required for faceswap). Use upload_image tool with purpose: faceswap_source to get this URL."
                 },
                 targetImage: {
                     type: "string",
-                    description: "Public URL to target body image (required for faceswap). Must be accessible without auth."
+                    description: "Public URL to target body image (required for faceswap). Use upload_image tool with purpose: faceswap_target to get this URL."
                 },
                 jobId: {
                     type: "string",
