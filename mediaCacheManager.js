@@ -44,7 +44,8 @@ function cacheMediaMessage(chatId, message) {
             type: message.type,
             mimetype: message.mimetype || 'unknown',
             caption: message.body || '',
-            timestamp: message.timestamp || Date.now(),
+            // FIX: wachan message.timestamp is in SECONDS, convert to MILLISECONDS
+            timestamp: message.timestamp ? message.timestamp * 1000 : Date.now(),
             fromMe: message.fromMe || false,
             sender: message.sender?.id || message.from,
             // PURE MESSAGE OBJECT APPROACH: Store only the message, no buffer
@@ -199,11 +200,6 @@ function cleanupExpired() {
 function getCacheStats() {
     const now = Date.now();
 
-    // DEBUG: Log raw cache state
-    console.log('[MediaCache] getCacheStats() called');
-    console.log('[MediaCache] Total chats in cache:', mediaCache.size);
-    console.log('[MediaCache] Cache keys:', Array.from(mediaCache.keys()));
-
     const stats = {
         totalChats: mediaCache.size,
         totalItems: 0,
@@ -216,8 +212,12 @@ function getCacheStats() {
     };
 
     for (const [chatId, entries] of mediaCache.entries()) {
-        // Filter out expired (for accurate count)
+        // Filter out expired entries
         const validEntries = entries.filter(entry => {
+            if (!entry.timestamp) {
+                console.warn(`[MediaCache] Entry ${entry.messageId} has no timestamp`);
+                return false;
+            }
             const age = now - entry.timestamp;
             return age < CACHE_DURATION_MS;
         });
@@ -248,6 +248,8 @@ function getCacheStats() {
 
     // Sort by newest first
     stats.chats.sort((a, b) => b.newestTimestamp - a.newestTimestamp);
+
+    console.log(`[MediaCache] Stats: ${stats.totalChats} chats, ${stats.totalItems} items`);
 
     return stats;
 }

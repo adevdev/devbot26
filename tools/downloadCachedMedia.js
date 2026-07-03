@@ -6,11 +6,13 @@
  */
 
 const mediaCacheManager = require('../mediaCacheManager');
+const fs = require('fs');
+const path = require('path');
 
 module.exports = {
     definition: {
         name: 'download_cached_media',
-        description: 'Download media from a previously sent message using its cached message ID. Use this when user sent images before giving faceswap/i2v command. Returns base64 encoded media data that can be passed to upload_image tool. Check the Recent Media Cache section in your system prompt to see available cached message IDs.',
+        description: 'Download media from a previously sent message using its cached message ID. Use this when user sent images before giving faceswap/i2v command. Returns file path that can be used with send_image or other tools. Check the Recent Media Cache section in your system prompt to see available cached message IDs.',
         input_schema: {
             type: 'object',
             properties: {
@@ -37,14 +39,13 @@ module.exports = {
         try {
             console.log(`[DownloadCachedMedia] Attempting to download from message ID: ${messageId}`);
 
-            // FIX: Use message.room, not message.from (consistent with caching)
+            // Use message.room (consistent with caching)
             const chatId = message.room;
             console.log(`[DownloadCachedMedia] Using chatId: ${chatId}`);
 
             // Check if message exists in cache
             const cacheEntry = mediaCacheManager.getMediaById(chatId, messageId);
             if (!cacheEntry) {
-                console.log(`[DownloadCachedMedia] Message ${messageId} not found in cache for chatId ${chatId}`);
                 return JSON.stringify({
                     success: false,
                     error: `Message ${messageId} not found in cache. It may have expired (30min cache) or was not a media message.`
@@ -53,7 +54,7 @@ module.exports = {
 
             console.log(`[DownloadCachedMedia] Found in cache: ${cacheEntry.type}, sent ${new Date(cacheEntry.timestamp).toISOString()}`);
 
-            // Download media
+            // Download media from cache
             const mediaBuffer = await mediaCacheManager.downloadCachedMedia(chatId, messageId);
 
             if (!mediaBuffer) {
@@ -65,18 +66,48 @@ module.exports = {
 
             console.log(`[DownloadCachedMedia] Downloaded ${mediaBuffer.length} bytes`);
 
-            // Convert to base64 for JSON transport
-            const base64Data = mediaBuffer.toString('base64');
+            // Determine file extension
+            const mimetypeMap = {
+                'image/jpeg': 'jpg',
+                'image/jpg': 'jpg',
+                'image/png': 'png',
+                'image/gif': 'gif',
+                'image/webp': 'webp',
+                'video/mp4': 'mp4',
+                'audio/mpeg': 'mp3',
+                'application/pdf': 'pdf'
+            };
+
+            const ext = mimetypeMap[cacheEntry.mimetype] ||
+                        (cacheEntry.type === 'image' ? 'jpg' :
+                         cacheEntry.type === 'video' ? 'mp4' : 'bin');
+
+            // Save to temp file (consistent with downloadMedia tool)
+            const filename = `cached_media_${messageId}.${ext}`;
+            const outputDir = path.join(__dirname, '../temp');
+
+            // Create temp directory if not exists
+            if (!fs.existsSync(outputDir)) {
+                fs.mkdirSync(outputDir, { recursive: true });
+            }
+
+            const outputPath = path.join(outputDir, filename);
+
+            // Save buffer to file
+            fs.writeFileSync(outputPath, mediaBuffer);
+
+            console.log(`[DownloadCachedMedia] Saved to: ${outputPath}`);
 
             return JSON.stringify({
                 success: true,
-                messageId,
-                type: cacheEntry.type,
-                mimetype: cacheEntry.mimetype,
+                message: 'Media downloaded successfully from cache',
+                filePath: outputPath,
+                filename: filename,
                 size: mediaBuffer.length,
-                base64Data,
-                caption: cacheEntry.caption || null,
-                message: 'Media downloaded successfully. You can now pass this base64Data to upload_image tool.'
+                type: cacheEntry.type,
+                mimetype: cacheEntry.mimetype || 'unknown',
+                messageId: messageId,
+                hint: 'You can now use this filePath with send_image, send_document, or other tools.'
             });
 
         } catch (error) {
