@@ -225,8 +225,13 @@ module.exports = {
                         requestBody.duration = 2; // Default 2 seconds
                     }
                 }
+                // Faceswap mode - set default quality to HD for best results
+                else if (mode === 'faceswap') {
+                    // Default to HD quality unless user specifies otherwise
+                    requestBody.quality = quality || 'sd';
+                }
                 else {
-                    // For other modes (faceswap), allow custom settings
+                    // For any other future modes, allow custom settings
                     if (aspectRatio) requestBody.aspectRatio = aspectRatio;
                     if (quality) requestBody.quality = quality;
                     if (level) requestBody.level = level;

@@ -12,13 +12,18 @@ const path = require('path');
 module.exports = {
     definition: {
         name: 'download_cached_media',
-        description: 'Download media from a previously sent message using its cached message ID. Use this when user sent images before giving faceswap/i2v command. Returns file path that can be used with send_image or other tools. Check the Recent Media Cache section in your system prompt to see available cached message IDs.',
+        description: 'Download media from a previously sent message using its cached message ID. Returns file path that can be used with send_image or other tools. Check the Recent Media Cache section in your system prompt to see available cached message IDs.',
         input_schema: {
             type: 'object',
             properties: {
                 messageId: {
                     type: 'string',
                     description: 'WhatsApp message ID from the media cache (found in system prompt Recent Media Cache section)'
+                },
+                includeForAnalysis: {
+                    type: 'boolean',
+                    description: 'Set to true if you need to visually analyze/re-examine this image (e.g., user asks "check the color", "what\'s in that image"). Set to false (or omit) if you only need the file path for other tools like upload_image, send_image, or faceswap. Default: false',
+                    default: false
                 }
             },
             required: ['messageId']
@@ -33,11 +38,12 @@ module.exports = {
     },
 
     execute: async (input, context) => {
-        const { messageId } = input;
+        const { messageId, includeForAnalysis } = input;
         const { message } = context;
 
         try {
             console.log(`[DownloadCachedMedia] Attempting to download from message ID: ${messageId}`);
+            console.log(`[DownloadCachedMedia] includeForAnalysis: ${includeForAnalysis || false}`);
 
             // Use message.room (consistent with caching)
             const chatId = message.room;
@@ -107,7 +113,10 @@ module.exports = {
                 type: cacheEntry.type,
                 mimetype: cacheEntry.mimetype || 'unknown',
                 messageId: messageId,
-                hint: 'You can now use this filePath with send_image, send_document, or other tools.'
+                includeForAnalysis: includeForAnalysis || false,
+                hint: includeForAnalysis
+                    ? 'Image will be included in next API call for visual analysis'
+                    : 'You can now use this filePath with send_image, upload_image, or other tools.'
             });
 
         } catch (error) {
