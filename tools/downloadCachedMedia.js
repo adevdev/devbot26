@@ -113,10 +113,11 @@ module.exports = {
                 type: cacheEntry.type,
                 mimetype: cacheEntry.mimetype || 'unknown',
                 messageId: messageId,
+                base64Data: mediaBuffer.toString('base64'), // For upload_image tool
                 includeForAnalysis: includeForAnalysis || false,
                 hint: includeForAnalysis
                     ? 'Image will be included in next API call for visual analysis'
-                    : 'You can now use this filePath with send_image, upload_image, or other tools.'
+                    : 'You can now use filePath with upload_image tool (recommended), base64Data with upload_image tool, or filePath with send_image/other tools.'
             });
 
         } catch (error) {

@@ -1,7 +1,7 @@
 /**
  * Upload Image Tool
  * Upload WhatsApp image to AiLab CDN to get public URL
- * Required for faceswap (needs 2 URLs) and image-to-video modes
+ * General purpose tool for getting public URLs from WhatsApp images
  */
 
 const axios = require('axios');
@@ -10,22 +10,26 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: 'upload_image',
-        description: 'MANDATORY TOOL for faceswap and i2v workflows. This tool MUST be called to upload WhatsApp images to AiLab CDN before using connectAilab with faceswap or i2v modes. You CANNOT skip calling this tool - connectAilab requires public URLs, not WhatsApp message references. When user sends image for faceswap/i2v, you MUST: (1) CALL this tool immediately with the image, (2) Wait for the returned URL, (3) Store the URL, (4) Use the URL with connectAilab. Do NOT say "image uploaded" unless you actually called this tool and received a success response with URL. Supports three input methods: (1) current message, (2) quoted/replied message, (3) base64Data from download_cached_media tool. CRITICAL: Upload images IMMEDIATELY when received - WhatsApp message context is lost after new messages arrive.',
+        description: 'Upload WhatsApp images to CDN and get public URLs. Use this tool when you need a publicly accessible URL for an image (required for faceswap, i2v, or sharing images outside WhatsApp). Supports four input methods: (1) current message, (2) quoted/replied message, (3) filePath from download_cached_media tool (recommended), (4) base64Data from download_cached_media tool. For faceswap workflow: download both images from cache, upload each with appropriate purpose, then use URLs with connectAilab.',
         input_schema: {
             type: 'object',
             properties: {
                 purpose: {
                     type: 'string',
-                    enum: ['faceswap_source', 'faceswap_target', 'i2v_input'],
-                    description: 'Purpose of this upload: faceswap_source (the face to use), faceswap_target (the body/image to modify), i2v_input (input for image-to-video)'
+                    enum: ['faceswap_source', 'faceswap_target', 'i2v_input', 'general'],
+                    description: 'Purpose of upload: faceswap_source (face image), faceswap_target (body image), i2v_input (image-to-video input), general (any other use case)'
                 },
                 fromQuoted: {
                     type: 'boolean',
-                    description: 'Set to true to upload image from quoted/replied message instead of current message. Default: false (current message)'
+                    description: 'Set to true to upload from quoted/replied message. Default: false (current message)'
+                },
+                filePath: {
+                    type: 'string',
+                    description: 'Local file path from download_cached_media tool (recommended method)'
                 },
                 base64Data: {
                     type: 'string',
-                    description: 'Optional: Base64 encoded image data from download_cached_media tool. If provided, image will be uploaded from this data instead of WhatsApp message.'
+                    description: 'Base64 encoded image data from download_cached_media tool'
                 }
             },
             required: ['purpose']
@@ -35,7 +39,7 @@ module.exports = {
     // Metadata for UI/UX
     metadata: {
         icon: '📤',
-        progressMessage: (input) => `Uploading image (${input.purpose})...`,
+        progressMessage: (input) => `Uploading to CDN (${input.purpose})...`,
         resultType: 'data'
     },
 
@@ -46,21 +50,36 @@ module.exports = {
      * @returns {Promise<string>} Result with uploaded URL
      */
     execute: async (input, context) => {
-        const { purpose, fromQuoted = false, base64Data = null } = input;
+        const { purpose, fromQuoted = false, filePath = null, base64Data = null } = input;
         const { message } = context;
 
         try {
-            console.log(`[UploadImage] Starting upload for purpose: ${purpose}, fromQuoted: ${fromQuoted}, hasBase64: ${!!base64Data}`);
+            console.log(`[UploadImage] Starting upload: ${purpose}`);
 
             let imageBuffer;
 
-            // Method 1: Upload from base64Data (from download_cached_media tool)
-            if (base64Data) {
-                console.log('[UploadImage] Using base64Data from download_cached_media...');
-                imageBuffer = Buffer.from(base64Data, 'base64');
-                console.log(`[UploadImage] Base64 decoded: ${imageBuffer.length} bytes`);
+            // Method 1: Upload from filePath (from download_cached_media tool)
+            if (filePath) {
+                console.log('[UploadImage] Reading from filePath:', filePath);
+                const fs = require('fs');
+
+                if (!fs.existsSync(filePath)) {
+                    return JSON.stringify({
+                        success: false,
+                        error: `File not found: ${filePath}`
+                    });
+                }
+
+                imageBuffer = fs.readFileSync(filePath);
+                console.log(`[UploadImage] File read: ${imageBuffer.length} bytes`);
             }
-            // Method 2: Upload from quoted message
+            // Method 2: Upload from base64Data (from download_cached_media tool)
+            else if (base64Data) {
+                console.log('[UploadImage] Using base64Data...');
+                imageBuffer = Buffer.from(base64Data, 'base64');
+                console.log(`[UploadImage] Decoded: ${imageBuffer.length} bytes`);
+            }
+            // Method 3: Upload from quoted message
             else if (fromQuoted) {
                 console.log('[UploadImage] Getting image from quoted message...');
                 const quotedMsg = await message.getQuoted();
@@ -84,13 +103,13 @@ module.exports = {
                 console.log('[UploadImage] Downloading image from quoted WhatsApp message...');
                 imageBuffer = await quotedMsg.download();
             }
-            // Method 3: Upload from current message
+            // Method 4: Upload from current message
             else {
                 // Check if message has image
                 if (!message.hasMedia || !message.type.includes('image')) {
                     return JSON.stringify({
                         success: false,
-                        error: 'No image found in current message. Please send an image, quote an image, or provide base64Data.'
+                        error: 'No image found in current message. Please send an image, quote an image, provide filePath, or provide base64Data.'
                     });
                 }
 
@@ -124,7 +143,16 @@ module.exports = {
             }
 
             // Upload to AiLab CDN
-            console.log('[UploadImage] Uploading to AiLab CDN...');
+            console.log('[UploadImage] Uploading to CDN...');
+
+            // Verify buffer integrity before upload
+            if (imageBuffer.length < 100) {
+                console.error(`[UploadImage] Buffer too small: ${imageBuffer.length} bytes`);
+                return JSON.stringify({
+                    success: false,
+                    error: `Image data too small (${imageBuffer.length} bytes). Try resending the image.`
+                });
+            }
 
             const FormData = require('form-data');
             const formData = new FormData();
@@ -140,7 +168,8 @@ module.exports = {
                     ...formData.getHeaders()
                 },
                 maxContentLength: Infinity,
-                maxBodyLength: Infinity
+                maxBodyLength: Infinity,
+                maxRedirects: 0
             });
 
             if (!uploadResponse.data.success) {
@@ -157,7 +186,7 @@ module.exports = {
                 success: true,
                 url: uploadedUrl,
                 purpose: purpose,
-                message: `Image uploaded successfully for ${purpose}`
+                message: `Image uploaded successfully`
             });
 
         } catch (error) {

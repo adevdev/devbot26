@@ -61,9 +61,11 @@ ${mediaList}
 
 2. **For faceswap/i2v workflows:**
    - When user requests faceswap or image-to-video, you can reference these cached images
-   - Use \`download_cached_media\` tool with their message IDs
-   - Then use \`upload_image\` tool to upload to CDN
-   - Finally call \`connectAilab\` with the URLs
+   - Step 1: Use \`download_cached_media\` tool with message ID (returns filePath + base64Data)
+   - Step 2: Use \`upload_image\` tool with filePath parameter (recommended) or base64Data parameter
+   - Step 3: Store the returned CDN URL
+   - Step 4: Repeat for second image if needed
+   - Step 5: Call \`connectAilab\` with the CDN URLs (sourceImage + targetImage for faceswap)
 
 3. **Recent conversation context:**
    - Images marked as **[RECENT]** were sent in the last 5 minutes and are likely part of current conversation
@@ -78,7 +80,12 @@ User: "is there a cat in that image?"
 You: → Call download_cached_media(messageId from #1) → Re-analyze → Answer
 
 User: [sends image 1] → [sends image 2] → "faceswap these"
-You: → download_cached_media(#1) → upload_image → download_cached_media(#2) → upload_image → connectAilab(faceswap)`;
+You:
+  1. download_cached_media(messageId: #1) → get filePath1
+  2. upload_image(purpose: "faceswap_target", filePath: filePath1) → get url1
+  3. download_cached_media(messageId: #2) → get filePath2
+  4. upload_image(purpose: "faceswap_source", filePath: filePath2) → get url2
+  5. connectAilab(mode: "faceswap", sourceImage: url2, targetImage: url1)`;
     }
 };
 

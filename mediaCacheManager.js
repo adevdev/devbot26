@@ -137,10 +137,6 @@ async function downloadCachedMedia(chatId, messageId) {
 
         if (!buffer) {
             console.error('[MediaCache] Re-download failed: downloadMedia() returned null');
-            console.error('[MediaCache] This may happen if:');
-            console.error('[MediaCache] - Message was deleted from WhatsApp');
-            console.error('[MediaCache] - WhatsApp session disconnected');
-            console.error('[MediaCache] - Message object lost its context');
             return null;
         }
 
