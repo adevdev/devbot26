@@ -79,13 +79,24 @@ You: [analyze image, cache is populated]
 User: "is there a cat in that image?"
 You: → Call download_media(source: "cached", messageId: from #1, includeForAnalysis: true) → Re-analyze → Answer
 
-User: [sends image 1] → [sends image 2] → "faceswap these"
+User: [sends TARGET body image] → [sends SOURCE face image] → "faceswap these"
 You:
-  1. download_media(source: "cached", messageId: #1) → get filePath1
-  2. upload_image(purpose: "faceswap_target", filePath: filePath1) → get url1
-  3. download_media(source: "cached", messageId: #2) → get filePath2
-  4. upload_image(purpose: "faceswap_source", filePath: filePath2) → get url2
-  5. connectAilab(mode: "faceswap", sourceImage: url2, targetImage: url1)`;
+  IMPORTANT: Cache is ordered MOST RECENT FIRST, so:
+  - #1 in list = SOURCE face (sent last, most recent)
+  - #2 in list = TARGET body (sent first, older)
+
+  Workflow:
+  1. download_media(source: "cached", messageId: #2) → get filePath1 (TARGET)
+  2. upload_image(purpose: "faceswap_target", filePath: filePath1, caption: caption from step 1) → get url1
+  3. download_media(source: "cached", messageId: #1) → get filePath2 (SOURCE)
+  4. upload_image(purpose: "faceswap_source", filePath: filePath2, caption: caption from step 3) → get url2
+  5. connectAilab(mode: "faceswap", sourceImage: url2, targetImage: url1)
+
+**CRITICAL for faceswap:**
+- If user doesn't specify which is source/target, ASK first: "Which image is the face (source) and which is the body (target)?"
+- Cache list #1 = NEWEST image (just sent), #2 = OLDER image (sent before)
+- Common pattern: user sends body first, then face → so #2=target, #1=source
+- But users might send in different order - ALWAYS verify captions or ask if unclear!`;
     }
 };
 

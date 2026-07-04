@@ -11,7 +11,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: 'upload_image',
-        description: 'Upload WhatsApp images to CDN and get public URLs. Use this tool when you need a publicly accessible URL for an image (required for faceswap, i2v, or sharing images outside WhatsApp). Supports four input methods: (1) current message, (2) quoted/replied message, (3) filePath from download_media tool (recommended), (4) base64Data from download_media tool. For faceswap workflow: download both images from cache, upload each with appropriate purpose, then use URLs with connectAilab.',
+        description: 'Upload WhatsApp images to CDN and get public URLs. Use this tool when you need a publicly accessible URL for an image (required for faceswap, i2v, or sharing images outside WhatsApp). CRITICAL FOR FACESWAP: Always pass caption from download_media result - this helps track which image is which (e.g., "face photo" vs "body photo"). Without captions, images become hard to identify in upload history. Supports four input methods: (1) current message, (2) quoted/replied message, (3) filePath from download_media tool (recommended), (4) base64Data from download_media tool. For faceswap workflow: download both images from cache with DIFFERENT messageIds, upload each with appropriate purpose AND caption, verify you get two DIFFERENT URLs.',
         input_schema: {
             type: 'object',
             properties: {
