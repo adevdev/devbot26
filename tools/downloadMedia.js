@@ -57,6 +57,7 @@ module.exports = {
             let mediaBuffer;
             let mediaType;
             let mimetype;
+            let caption = null;
             let sourceInfo;
 
             // Branch: Download from quoted message
@@ -98,6 +99,7 @@ module.exports = {
 
                 mediaType = quoted.type;
                 mimetype = quoted.mimetype || 'unknown';
+                caption = quoted.body || null;
                 sourceInfo = 'quoted message';
 
                 console.log(`[DownloadMedia] Downloaded from quoted: ${mediaBuffer.length} bytes`);
@@ -136,6 +138,7 @@ module.exports = {
 
                 mediaType = cacheEntry.type;
                 mimetype = cacheEntry.mimetype || 'unknown';
+                caption = cacheEntry.caption || null;
                 sourceInfo = `cached message ${messageId}`;
 
                 console.log(`[DownloadMedia] Downloaded from cache: ${mediaBuffer.length} bytes`);
@@ -201,6 +204,7 @@ module.exports = {
                 size: mediaBuffer.length,
                 type: mediaType,
                 mimetype: mimetype,
+                caption: caption,
                 base64Data: mediaBuffer.toString('base64'), // For upload_image or AI vision
                 includeForAnalysis: includeForAnalysis,
                 hint: includeForAnalysis

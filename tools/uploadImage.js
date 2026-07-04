@@ -5,6 +5,7 @@
  */
 
 const axios = require('axios');
+const uploadHistoryManager = require('../uploadHistoryManager');
 
 module.exports = {
     // Tool definition for AI API
@@ -30,6 +31,10 @@ module.exports = {
                 base64Data: {
                     type: 'string',
                     description: 'Base64 encoded image data from download_media tool'
+                },
+                caption: {
+                    type: 'string',
+                    description: 'Optional caption/description for this image (e.g., "target body", "girl with red dress"). Helps identify image later in upload history.'
                 }
             },
             required: ['purpose']
@@ -50,7 +55,7 @@ module.exports = {
      * @returns {Promise<string>} Result with uploaded URL
      */
     execute: async (input, context) => {
-        const { purpose, fromQuoted = false, filePath = null, base64Data = null } = input;
+        const { purpose, fromQuoted = false, filePath = null, base64Data = null, caption = null } = input;
         const { message } = context;
 
         try {
@@ -181,6 +186,16 @@ module.exports = {
 
             const uploadedUrl = uploadResponse.data.url;
             console.log('[UploadImage] Upload successful:', uploadedUrl);
+
+            // Track upload in history for AI reference
+            const chatId = message.room;
+            uploadHistoryManager.trackUpload(chatId, {
+                url: uploadedUrl,
+                purpose: purpose,
+                filename: uploadResponse.data.filename || uploadedUrl.split('/').pop(),
+                size: imageBuffer.length,
+                caption: caption
+            });
 
             return JSON.stringify({
                 success: true,

@@ -7,6 +7,7 @@ const memoryManager = require('../memoryManager');
 const tools = require('../tools');
 const systemPromptLoader = require('../systemPromptLoader');
 const mediaCacheManager = require('../mediaCacheManager');
+const uploadHistoryManager = require('../uploadHistoryManager');
 
 
 // ============================================
@@ -528,6 +529,7 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         settingsManager,
         memoryManager,
         whitelistManager,
+        uploadHistoryManager,
         bot,
 
         // Message context
