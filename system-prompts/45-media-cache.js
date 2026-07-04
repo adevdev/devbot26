@@ -56,12 +56,12 @@ ${mediaList}
 
 1. **"Previous image" / "that image" references:**
    - When user asks about "previous image", "that image", or similar references, they mean the MOST RECENT image in the cache above (usually #1)
-   - You MUST use the \`download_cached_media\` tool with that message ID to access it
+   - You MUST use the \`download_media\` tool with source="cached" and that message ID to access it
    - Even if the image was sent a few minutes ago, it's still in cache (30min TTL)
 
 2. **For faceswap/i2v workflows:**
    - When user requests faceswap or image-to-video, you can reference these cached images
-   - Step 1: Use \`download_cached_media\` tool with message ID (returns filePath + base64Data)
+   - Step 1: Use \`download_media\` tool with source="cached" and messageId (returns filePath + base64Data)
    - Step 2: Use \`upload_image\` tool with filePath parameter (recommended) or base64Data parameter
    - Step 3: Store the returned CDN URL
    - Step 4: Repeat for second image if needed
@@ -77,13 +77,13 @@ User: [sends image] "what's in this?"
 You: [analyze image, cache is populated]
 
 User: "is there a cat in that image?"
-You: → Call download_cached_media(messageId from #1) → Re-analyze → Answer
+You: → Call download_media(source: "cached", messageId: from #1, includeForAnalysis: true) → Re-analyze → Answer
 
 User: [sends image 1] → [sends image 2] → "faceswap these"
 You:
-  1. download_cached_media(messageId: #1) → get filePath1
+  1. download_media(source: "cached", messageId: #1) → get filePath1
   2. upload_image(purpose: "faceswap_target", filePath: filePath1) → get url1
-  3. download_cached_media(messageId: #2) → get filePath2
+  3. download_media(source: "cached", messageId: #2) → get filePath2
   4. upload_image(purpose: "faceswap_source", filePath: filePath2) → get url2
   5. connectAilab(mode: "faceswap", sourceImage: url2, targetImage: url1)`;
     }

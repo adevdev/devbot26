@@ -34,8 +34,8 @@ AI sees both images in cache → downloads both → uploads both → faceswap �
 
 1. **`mediaCacheManager.js`** - In-memory cache (30 min TTL, max 10 per chat)
 2. **`system-prompts/45-media-cache.js`** - System prompt module yang inform AI tentang cached media
-3. **`tools/downloadCachedMedia.js`** - Tool untuk download dari cache by message ID
-4. **`tools/uploadImage.js`** - Updated to support base64Data input
+3. **`tools/downloadMedia.js`** - Unified tool untuk download dari quoted message atau cache by message ID
+4. **`tools/uploadImage.js`** - Updated to support filePath and base64Data input
 
 ---
 
@@ -57,10 +57,10 @@ Bot: (no response, image cached silently)
 User: "ganti wajah cwe ini"
 
 AI: ✅ Checks system prompt: "Recent Media Cache: 2 images available"
-     ✅ Calls download_cached_media(messageId1) → gets base64
-     ✅ Calls upload_image(base64Data, purpose: faceswap_target) → gets URL1
-     ✅ Calls download_cached_media(messageId2) → gets base64
-     ✅ Calls upload_image(base64Data, purpose: faceswap_source) → gets URL2
+     ✅ Calls download_media(source: "cached", messageId: messageId1) → gets filePath + base64
+     ✅ Calls upload_image(filePath, purpose: faceswap_target) → gets URL1
+     ✅ Calls download_media(source: "cached", messageId: messageId2) → gets filePath + base64
+     ✅ Calls upload_image(filePath, purpose: faceswap_source) → gets URL2
      ✅ Calls connectAilab.generate(mode: faceswap, targetImage: URL1, sourceImage: URL2)
      
 Bot: "Processing faceswap... ⚙️"
@@ -100,14 +100,17 @@ AI: ✅ Recognizes quoted message has image 1
 
 ## 📋 Tools Reference
 
-### 1. `download_cached_media`
+### 1. `download_media` (Unified)
 
-**Purpose:** Download media from previously sent message using cached message ID.
+**Purpose:** Download media from WhatsApp messages - supports quoted/replied messages and cached message IDs.
 
 **Parameters:**
 ```javascript
 {
-  messageId: "3EB0XXXXX_XXXXX@s.whatsapp.net"  // From system prompt cache
+  source: "quoted" | "cached",           // Required: source type
+  messageId: "3EB0XXXXX@s.whatsapp.net", // Required if source="cached"
+  includeForAnalysis: false,              // Optional: include in next AI vision call
+  customFilename: "my_image"              // Optional: custom filename
 }
 ```
 
@@ -115,26 +118,28 @@ AI: ✅ Recognizes quoted message has image 1
 ```json
 {
   "success": true,
-  "messageId": "3EB0XXXXX...",
+  "filePath": "/path/to/temp/media_cached_123.jpg",
+  "filename": "media_cached_123.jpg",
+  "size": 245678,
   "type": "image",
   "mimetype": "image/jpeg",
-  "size": 245678,
   "base64Data": "iVBORw0KGgoAAAANS...",
-  "caption": "optional caption",
-  "message": "Media downloaded successfully. You can now pass this base64Data to upload_image tool."
+  "includeForAnalysis": false,
+  "message": "Media downloaded successfully from cached message"
 }
 ```
 
 ### 2. `upload_image` (Updated)
 
 **New Features:**
-- ✅ Supports 3 input methods: current message, quoted message, base64Data
-- ✅ base64Data parameter for cached media workflow
+- ✅ Supports 4 input methods: current message, quoted message, filePath, base64Data
+- ✅ filePath parameter for cached media workflow (recommended)
+- ✅ base64Data parameter (alternative method)
 
 **Parameters:**
 ```javascript
 {
-  purpose: 'faceswap_source' | 'faceswap_target' | 'i2v_input',
+  purpose: 'faceswap_source' | 'faceswap_target' | 'i2v_input' | 'general',
   
   // Method 1: Current message (default)
   // (no extra params)
@@ -142,8 +147,11 @@ AI: ✅ Recognizes quoted message has image 1
   // Method 2: Quoted message
   fromQuoted: true,
   
-  // Method 3: From cache (via download_cached_media)
-  base64Data: "<base64 string from download_cached_media>"
+  // Method 3: From file path (recommended for download_media workflow)
+  filePath: "/path/to/temp/media_cached_123.jpg",
+  
+  // Method 4: From base64Data (alternative)
+  base64Data: "<base64 string from download_media>"
 }
 ```
 
@@ -151,10 +159,20 @@ AI: ✅ Recognizes quoted message has image 1
 
 ```javascript
 // Workflow: Download from cache → Upload to CDN
-const cached = download_cached_media({ messageId: "3EB0XXX..." });
+const cached = download_media({ 
+  source: "cached",
+  messageId: "3EB0XXX..." 
+});
+
 const uploaded = upload_image({ 
   purpose: 'faceswap_target',
-  base64Data: cached.base64Data  // Pass base64 from cache
+  filePath: cached.filePath  // Recommended: use filePath
+});
+
+// Or alternative with base64:
+const uploaded2 = upload_image({
+  purpose: 'faceswap_source',
+  base64Data: cached.base64Data
 });
 ```
 
@@ -177,7 +195,7 @@ You have access to recently sent images in this conversation:
 
 IMPORTANT FOR FACESWAP/I2V WORKFLOWS:
 When user requests faceswap or image-to-video, you can reference these 
-cached images using the download_cached_media tool with their message IDs...
+cached images using the download_media tool with source="cached" and their message IDs...
 ```
 
 ---
@@ -206,15 +224,17 @@ const MAX_CACHE_PER_CHAT = 10;              // Max 10 images per chat
 
 ### Phase 2: Test Download Tool
 
-- [ ] AI calls `download_cached_media` with valid message ID
-- [ ] Verify returns base64Data
+- [ ] AI calls `download_media` with source="cached" and valid message ID
+- [ ] Verify returns filePath and base64Data
 - [ ] Test error: call with invalid/expired message ID
+- [ ] Test source="quoted" for quoted messages
 
-### Phase 3: Test Upload with Base64
+### Phase 3: Test Upload with FilePath/Base64
 
-- [ ] AI downloads cached media → gets base64
-- [ ] AI calls `upload_image` with base64Data
+- [ ] AI downloads cached media → gets filePath + base64Data
+- [ ] AI calls `upload_image` with filePath (recommended method)
 - [ ] Verify uploads to CDN and returns URL
+- [ ] Alternative: test with base64Data parameter
 
 ### Phase 4: Full Faceswap Flow
 
@@ -289,13 +309,13 @@ Response:
 **New Files:**
 - `mediaCacheManager.js` - Cache manager
 - `system-prompts/45-media-cache.js` - System prompt module
-- `tools/downloadCachedMedia.js` - Download from cache tool
 
 **Modified Files:**
-- `commands/ai.js` - Import cache manager, auto-cache media, add to context
-- `tools/uploadImage.js` - Support base64Data parameter
+- `tools/downloadMedia.js` - Unified tool supporting both quoted and cached sources
+- `commands/ai.js` - Import cache manager, auto-cache media, add to context, auto-cleanup temp files
+- `tools/uploadImage.js` - Support filePath and base64Data parameters
 
-**Total Lines Added:** ~450 lines
+**Total Lines:** ~500 lines
 
 ---
 
@@ -316,10 +336,12 @@ Response:
 ```
 [MediaCache] Cached image from 120363...@g.us: 3EB0...
 [MediaCache] Cleaned up 2 expired entries
-[DownloadCachedMedia] Attempting to download from message ID: 3EB0...
-[DownloadCachedMedia] Downloaded 245678 bytes
-[UploadImage] Using base64Data from download_cached_media...
-[UploadImage] Base64 decoded: 245678 bytes
+[DownloadMedia] Source: cached, includeForAnalysis: false
+[DownloadMedia] Downloaded from cache: 245678 bytes
+[UploadImage] Reading from filePath: /temp/media_cached_123.jpg
+[UploadImage] File read: 245678 bytes
+[UploadImage] Uploading to CDN...
+[UploadImage] Upload successful: https://cdn.adevdev.com/uploads/...
 ```
 
 **Common Issues:**

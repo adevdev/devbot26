@@ -10,7 +10,7 @@ module.exports = {
     // Tool definition for AI API
     definition: {
         name: 'upload_image',
-        description: 'Upload WhatsApp images to CDN and get public URLs. Use this tool when you need a publicly accessible URL for an image (required for faceswap, i2v, or sharing images outside WhatsApp). Supports four input methods: (1) current message, (2) quoted/replied message, (3) filePath from download_cached_media tool (recommended), (4) base64Data from download_cached_media tool. For faceswap workflow: download both images from cache, upload each with appropriate purpose, then use URLs with connectAilab.',
+        description: 'Upload WhatsApp images to CDN and get public URLs. Use this tool when you need a publicly accessible URL for an image (required for faceswap, i2v, or sharing images outside WhatsApp). Supports four input methods: (1) current message, (2) quoted/replied message, (3) filePath from download_media tool (recommended), (4) base64Data from download_media tool. For faceswap workflow: download both images from cache, upload each with appropriate purpose, then use URLs with connectAilab.',
         input_schema: {
             type: 'object',
             properties: {
@@ -25,11 +25,11 @@ module.exports = {
                 },
                 filePath: {
                     type: 'string',
-                    description: 'Local file path from download_cached_media tool (recommended method)'
+                    description: 'Local file path from download_media tool (recommended method)'
                 },
                 base64Data: {
                     type: 'string',
-                    description: 'Base64 encoded image data from download_cached_media tool'
+                    description: 'Base64 encoded image data from download_media tool'
                 }
             },
             required: ['purpose']
@@ -58,7 +58,7 @@ module.exports = {
 
             let imageBuffer;
 
-            // Method 1: Upload from filePath (from download_cached_media tool)
+            // Method 1: Upload from filePath (from download_media tool)
             if (filePath) {
                 console.log('[UploadImage] Reading from filePath:', filePath);
                 const fs = require('fs');
@@ -73,7 +73,7 @@ module.exports = {
                 imageBuffer = fs.readFileSync(filePath);
                 console.log(`[UploadImage] File read: ${imageBuffer.length} bytes`);
             }
-            // Method 2: Upload from base64Data (from download_cached_media tool)
+            // Method 2: Upload from base64Data (from download_media tool)
             else if (base64Data) {
                 console.log('[UploadImage] Using base64Data...');
                 imageBuffer = Buffer.from(base64Data, 'base64');

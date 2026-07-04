@@ -599,6 +599,8 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
     // Tool calling loop (max iterations to prevent infinite loops)
     let response;
+    let tempFilesToCleanup = []; // Track temp files for cleanup
+
     try {
         response = await callAIAPI(messages, toolDefinitions, systemPrompt, model, apiKey, apiEndpoint);
         console.log(`[AI] Initial API response: stop_reason=${response.stop_reason}, content_blocks=${response.content?.length || 0}`);
@@ -715,6 +717,19 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
                 // Execute tool with context
                 toolResult = await tools.executeTool(toolUse.name, toolUse.input, toolContext);
 
+                // Track temp files from download_media for cleanup
+                if (toolUse.name === 'download_media' && toolResult) {
+                    try {
+                        const parsed = JSON.parse(toolResult);
+                        if (parsed.success && parsed.filePath) {
+                            tempFilesToCleanup.push(parsed.filePath);
+                            console.log(`[AI] Tracked temp file for cleanup: ${parsed.filePath}`);
+                        }
+                    } catch (e) {
+                        // Not JSON or no filePath, skip
+                    }
+                }
+
                 // No immediate handling - let AI process all tool results
                 // Images will be handled in Path 2 (post-processing) after AI generates response
 
@@ -735,13 +750,13 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             }
         }
 
-        // Check if download_cached_media was executed with includeForAnalysis flag
+        // Check if download_media was executed with includeForAnalysis flag
         let downloadedCacheImage = null;
         for (const result of toolResults) {
             try {
                 const parsed = JSON.parse(result.content);
                 if (parsed.filePath && parsed.success && parsed.type === 'image') {
-                    console.log(`[AI] download_cached_media returned: ${parsed.filePath}`);
+                    console.log(`[AI] download_media returned: ${parsed.filePath}`);
 
                     // Check if AI explicitly requested to include for analysis
                     if (parsed.includeForAnalysis === true) {
@@ -830,6 +845,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             }
 
             await saveToMemory(roomJid, prompt, memoryResponse, model, userMessage, imageBuffer, group);
+
+            // Cleanup temp files before early return
+            cleanupTempFiles(tempFilesToCleanup);
 
             // Just return null to skip text response
             return null;
@@ -1051,6 +1069,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             // Save to memory
             await saveToMemory(roomJid, prompt, finalText, model, userMessage, preparedImageBuffer, group);
 
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
+
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
@@ -1081,6 +1102,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             // Save to memory (fallback path - image send failed)
             await saveToMemory(roomJid, prompt, finalText + `\n\n_Image unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
+
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
 
             return null;
         }
@@ -1140,6 +1164,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             // Save to memory after successful image send
             await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
+
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
@@ -1170,6 +1197,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             // Save to memory (Priority 2 fallback - image download failed)
             await saveToMemory(roomJid, prompt, finalText + `\n\n_Image unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
+
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
 
             return null;
         }
@@ -1242,6 +1272,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
             // Save to memory after successful response
             await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
+
             // Return null to prevent wachan from sending again
             return null;
         } catch (error) {
@@ -1272,6 +1305,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
 
             // Save to memory (Priority 3 fallback - document send failed)
             await saveToMemory(roomJid, prompt, finalText + `\n\n_Document unavailable: ${error.message}_`, model, userMessage, imageBuffer, group);
+
+            // Cleanup temp files
+            cleanupTempFiles(tempFilesToCleanup);
 
             return null;
         }
@@ -1305,6 +1341,9 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
         // Save to memory after successful response
         await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
+        // Cleanup temp files from download_cached_media
+        cleanupTempFiles(tempFilesToCleanup);
+
         return null; // Already sent
     }
 
@@ -1312,7 +1351,27 @@ async function callAIAPIWithTools(prompt, model, apiKey, apiEndpoint, roomJid, i
     console.log(`[AI] Returning direct response (${finalText.length} chars)`);
     await saveToMemory(roomJid, prompt, finalText, model, userMessage, imageBuffer, group);
 
+    // Cleanup temp files from download_cached_media
+    cleanupTempFiles(tempFilesToCleanup);
+
     return finalText;
+}
+
+// Helper function to cleanup temp files
+function cleanupTempFiles(filePaths) {
+    if (!filePaths || filePaths.length === 0) return;
+
+    const fs = require('fs');
+    for (const filePath of filePaths) {
+        try {
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+                console.log(`[AI] Cleaned up temp file: ${filePath}`);
+            }
+        } catch (error) {
+            console.warn(`[AI] Failed to cleanup temp file ${filePath}:`, error.message);
+        }
+    }
 }
 
 // Helper function to save conversation to memory

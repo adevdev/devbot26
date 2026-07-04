@@ -29,6 +29,7 @@
     "mongodb": "^7.3.0",
     "pdfjs-dist": "^6.1.200",
     "pdfkit": "^0.19.1",
+    "qrcode-reader": "^1.0.4",
     "socket.io": "^4.6.1",
     "wa-sticker-formatter": "^4.4.4",
     "wachan": "^1.16.0"
