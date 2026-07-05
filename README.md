@@ -122,4 +122,4 @@ Assign models per user via dashboard. Auto-switches to Claude Sonnet 4.5 for ima
 
 ## License
 
-ISC - Devrian
+AGPL-3.0 © 2026 Ahmad Devrian (adevdev)
