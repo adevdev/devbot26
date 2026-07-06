@@ -3207,9 +3207,11 @@ async function refreshMediaCache() {
 }
 
 async function clearAllMediaCache() {
-    if (!confirm('⚠️ Clear all cached media?\n\nThis will remove all message IDs from cache. Media files on WhatsApp are not affected.')) {
-        return;
-    }
+    const confirmed = await showConfirm(
+        'Clear All Media Cache',
+        'This will remove all message IDs from cache. Media files on WhatsApp are not affected.'
+    );
+    if (!confirmed) return;
 
     try {
         const response = await fetch('/api/ai-settings/media-cache', {
@@ -3232,9 +3234,11 @@ async function clearAllMediaCache() {
 }
 
 async function clearChatCache(chatId) {
-    if (!confirm(`Clear cache for this chat?\n\nChat: ${truncateChatId(chatId)}`)) {
-        return;
-    }
+    const confirmed = await showConfirm(
+        'Clear Chat Cache',
+        `Clear cache for chat: ${truncateChatId(chatId)}?`
+    );
+    if (!confirmed) return;
 
     try {
         const response = await fetch(`/api/ai-settings/media-cache/${encodeURIComponent(chatId)}`, {
