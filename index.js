@@ -1143,7 +1143,7 @@ async function initBot() {
         // Start without phone number - wachan will use existing creds
         wachan.start({
             phoneNumber: null,
-            suppressBaileysLogs: false,
+            suppressBaileysLogs: true,
             baileysConfigOverrides: {
                 browser: ["Mac OS", "Safari", "14.4.1"],
                 version: [2, 3000, 1041589577],
