@@ -1119,7 +1119,9 @@ async function initBot() {
 
         wachan.start({
             phoneNumber: phoneNumber,
-            configOverrides: {
+            suppressBaileysLogs: false,
+            baileysConfigOverrides: {
+                version: [2, 3000, 1041589577],
                 keepAliveIntervalMs: 25000,
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
@@ -1141,7 +1143,9 @@ async function initBot() {
         // Start without phone number - wachan will use existing creds
         wachan.start({
             phoneNumber: null,
-            configOverrides: {
+            suppressBaileysLogs: false,
+            baileysConfigOverrides: {
+                version: [2, 3000, 1041589577],
                 keepAliveIntervalMs: 25000,
                 connectTimeoutMs: 60000,
                 defaultQueryTimeoutMs: 60000,
