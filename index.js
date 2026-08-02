@@ -1145,6 +1145,7 @@ async function initBot() {
             phoneNumber: null,
             suppressBaileysLogs: false,
             baileysConfigOverrides: {
+                browser: ["Mac OS", "Safari", "14.4.1"],
                 version: [2, 3000, 1041589577],
                 keepAliveIntervalMs: 25000,
                 connectTimeoutMs: 60000,
